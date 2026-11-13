@@ -274,9 +274,26 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 | `buffer` | 100 | samples either side; must be ≥ 1 |
 | `batchsize` | 32 | chunks per mini-batch |
 | `nepochs` | 20 | random partition of the chunks into mini-batches every epoch |
-| `delay`, `forget` | 1, 0.7 | $\rho_i=(i+\text{delay})^{-\text{forget}}$ |
+| `delay`, `forget` | 1, 0.9 | $\rho_i=(i+\text{delay})^{-\text{forget}}$; chosen by the simulation study below |
 | `initchunks` | 64 | chunks used for the batch initialisation |
 | `Fevery` | 0 | exact F every so many epochs (costs one full E-step) |
+
+**Simulation study of the defaults** (not in CI). Each problem was fitted with 10 epochs, 1000-sample chunks and 32 chunks per batch. The table gives the F gap to batch VB per sample, $\times10^{-6}$; lower is better.
+
+| problem | forget 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |
+|---|---|---|---|---|---|
+| $K=6$, $D=10$, zero mean, lifetime 20, $N=2\times10^5$ | 102 | 60 | 39 | 29 | 26 |
+| $K=8$, $D=40$, zero mean, lifetime 25, $N=2\times10^5$ | 2171 | 1222 | 783 | 560 | 457 |
+| $K=4$, $D=5$, with means, lifetime 10, $N=10^5$ | 162 | 102 | 71 | 56 | 49 |
+
+- With delay 1, a higher forgetting rate was better on every problem.
+- Delay 10 helped only at low rates and was worse at 1.0.
+- We use 0.9, which is HMM-MAR's default too:
+  - it is within 10–20% of 1.0 on every problem;
+  - at 1.0 the step size $1/(i+1)$ is a plain running average, which forgets a poor initialisation slowly, and these simulations, which start from good initialisations, would not show that.
+- The buffer length (10, 25, 50, 100 or 200 samples) made no difference, to within 0.1 of the values above, on any of the problems.
+  - The default stays at 100 to be safe for longer state lifetimes in real data, at about 10% extra cost.
+- All of these defaults are provisional until they have been checked on real M/EEG data.
 
 **Initialisation.**
 1. Run batch VB (§11) on `initchunks` random chunks, treating each chunk as a separate segment and using the **full-data prior**.
@@ -312,6 +329,20 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 - **Standardisation** (default on): each channel is z-scored within each dataset, using the mean and SD of its good samples in the selected trials. This matches the data assumption of §10.
 - **Lifetime prior:** the sticky-prior lifetime is given in seconds and converted using the sampling rate.
 - **Output datasets:** state probabilities are written to new `meeg` datasets with channels `State1..K` of type 'Other'. Trials that were not modelled are filled with NaN.
+
+## 9b. Time-delay embedding and PCA (TDE-HMM)
+
+`spm_hmm_tde_pca` wraps any data reader:
+
+- **Embedding.** Row $t$ of the embedded data is $[\mathbf y_{t+o+\ell_1},\dots,\mathbf y_{t+o+\ell_E}]$, where the lags $\ell_e$ are integers and $o=-\min_e\ell_e$.
+  - Each segment loses $\max\ell-\min\ell$ samples.
+  - A row is missing if any sample it uses is missing.
+- **PCA.** The covariance of the embedded data is pooled over all segments, using the observed rows only. The top `npca` eigenvectors are kept, or as many as reach a given fraction of the variance. Each component's sign is fixed by making its largest loading positive.
+- **Standardisation.** Components are then z-scored within groups, e.g. datasets, as in osl-dynamics' `tde_pca` followed by `standardize`.
+- **Never stored.** Each block is embedded, projected and standardised as it is read. Embedded data are never held in memory or written to disk.
+- **Zero-mean states.** As in HMM-MAR and osl-dynamics, a TDE-HMM normally uses zero-mean states, and `spm_eeg_hmm` defaults to them when embedding is requested. States then differ in the covariance of the embedded data, i.e. in their auto- and cross-spectra.
+- **Writing results.** `spm_eeg_hmm` writes the state probabilities back at the original samples. The $o$ samples at each end of a segment are NaN.
+- **Caveat.** Consecutive embedded rows share most of their samples, so the model's assumption that observations are conditionally independent is violated more strongly than for raw data. As with HMM-MAR and osl-dynamics, F is then over-confident in absolute terms. Comparisons of F between models fitted to the same embedded data remain the intended use.
 
 ## 10. Priors (defaults and rationale)
 
@@ -370,6 +401,10 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 
 **Reproducibility.** Use a local `RandStream` seeded from options. The global RNG is never changed.
 
+## 11a. Several complete fits
+
+`S.bestof = n` runs $n$ complete fits with seeds `S.seed`, `S.seed+1`, and so on. Each fit includes its own initialisations, so the fits are independent. The fit with the highest final F is kept, and `HMM.Fbestof` records every fit's F.
+
 ## 12. Numerical implementation notes
 
 - **Emissions:** compute $\mathbf W_k=\mathbf C_k^\top\mathbf C_k$ by Cholesky. Then $(\mathbf y-\mathbf m)^\top\mathbf W(\mathbf y-\mathbf m)=\|(\mathbf Y-\mathbf m^\top)\mathbf C_k^\top\|^2$ row-wise, at cost $O(TKD^2)$, vectorised over time.
@@ -378,6 +413,12 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 - **Precision matrices:** symmetrise every $\mathbf W_k^{-1}$. If Cholesky fails, **raise an error** instead of adding silent jitter.
 - **Dead states:** report $N_k$ and leave them alone; there is no forced pruning in version 1.
 - **MATLAB compatibility:** the code must run on R2020b, the oldest release in CI.
+- **Speed** (profiled on R2026b, Apple silicon, at a TDE-HMM size: $D=80$, $K=8$, zero mean, $5\times10^5$ samples):
+  - one full E-step takes 0.8 s: expected log-likelihood 50%, sufficient statistics 30%, forward–backward 15%;
+  - the first two are single BLAS calls per state (about 60 GFLOP/s), and the forward–backward loop costs 0.01 s per $5\times10^4$ samples under MATLAB's JIT;
+  - so a MEX implementation would gain little, and none is used;
+  - a stochastic epoch with 1000-sample chunks and 100-sample buffers costs about 1.5 full E-steps, because the buffers add 20% plus per-batch overhead;
+  - stochastic inference pays off when it needs fewer epochs than batch VB needs cycles, and when only mini-batches are read from disk.
 
 ## 13. Verification (MATLAB R2026b)
 
@@ -420,7 +461,17 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | Synthetic epoched `meeg` (bad trial, conditions) | bad trial excluded and written as NaN; condition selection |
 | Stochastic inference on `meeg` read from disk | >95% of states decoded correctly |
 
-The checks in all three tables are in `tests/test_spm_hmm.m`, except the two marked "not in CI".
+**Embedding, complete fits and batch interface (phase 4):**
+
+| check | result |
+|---|---|
+| Embedded rows rebuilt from the PCA reader with a full basis, against explicit construction (unequal lags, missing sample) | agree to $10^{-12}$; exactly the rows using the missing sample are missing |
+| PCA: orthonormal components; covariance of projected data equals the eigenvalues; selection by variance fraction; standardisation within groups | to $10^{-10}$ |
+| States with identical zero-lag covariance and different autocorrelation (+0.9, 0, −0.9) | zero-mean HMM 44% (chance about 33%); TDE-HMM (lags −3 to 3, 6 components) 97% |
+| `bestof`: F is the maximum over fits; the first fit equals a plain fit with the same seed | exact |
+| Batch job through `spm_jobman` (TDE, two `meeg` datasets) | model file saved; zero mean by default; >90% decoded correctly; embedding edges NaN; probabilities sum to 1 |
+
+The checks in all four tables are in `tests/test_spm_hmm.m`, except the two marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -448,6 +499,9 @@ The checks in all three tables are in `tests/test_spm_hmm.m`, except the two mar
 | §9 decoding, Viterbi | `spm_hmm_decode`, `spm_hmm_viterbi` |
 | §9 summary statistics | `spm_hmm_summary_stats` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
+| §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |
+| §11a several complete fits | `spm_hmm` (`S.bestof`) |
+| batch interface | `tbx_cfg_hmm` (SPM > Tools > HMM) |
 | all data access (memory or disk) | `private/data_reader` |
 | simulation | `spm_hmm_simulate` |
 | tests | `tests/test_spm_hmm.m` |

@@ -28,6 +28,9 @@ function HMM = spm_hmm(Y,S)
 %   .maxcyc    maximum VB cycles                                     [500]
 %   .tol       convergence: change in F < tol*|F|                   [1e-7]
 %   .seed      random seed (the global random stream is not used)      [0]
+%   .bestof    number of complete fits (each with its own initialisations
+%              and seed S.seed + r - 1); the one with the highest final F
+%              is returned                                             [1]
 %   .verbose   print progress                                       [true]
 %   .keepgamma return state probabilities in HMM.gamma              [true]
 %   .inference 'batch' or 'stochastic'                             ['batch']
@@ -37,7 +40,7 @@ function HMM = spm_hmm(Y,S)
 %     .batchsize    chunks per mini-batch                               [32]
 %     .nepochs      passes through the data                             [20]
 %     .delay        step size rho_i = (i + delay)^(-forget)              [1]
-%     .forget       forgetting rate, in (0.5,1]                        [0.7]
+%     .forget       forgetting rate, in (0.5,1]                        [0.9]
 %     .initchunks   chunks used for the batch initialisations          [64]
 %     .Fevery       exact F every Fevery epochs (0: only at the end)     [0]
 %   Stochastic inference initialises with batch VB on a random subset of
@@ -61,6 +64,7 @@ function HMM = spm_hmm(Y,S)
 %   .Finit     final F of each initialisation (on the initialisation
 %              subset for stochastic inference)
 %   .rho       stochastic: step size of every mini-batch update
+%   .Fbestof   final F of each complete fit (when S.bestof > 1)
 %
 % The generative model, the variational updates and the free energy are
 % derived in toolbox/HMM/doc/HMM_maths.md.
@@ -75,6 +79,22 @@ function HMM = spm_hmm(Y,S)
 if nargin < 2 || ~isfield(S,'K'), error('spm_hmm:invalidInput','S.K must be specified.'); end
 S = set_defaults(S);
 R = data_reader(Y,S.T);
+
+%-Several complete fits: keep the one with the highest F
+%--------------------------------------------------------------------------
+if S.bestof > 1
+    Fbestof = zeros(1,S.bestof);
+    for r = 1:S.bestof
+        Sr = S; Sr.bestof = 1; Sr.seed = S.seed + r - 1; Sr.T = [];
+        if S.verbose, fprintf('spm_hmm: complete fit %d/%d\n',r,S.bestof); end
+        H = spm_hmm(R,Sr);
+        Fbestof(r) = H.F;
+        if r == 1 || H.F > HMM.F, HMM = H; end
+    end
+    HMM.Fbestof = Fbestof;
+    HMM.options = S;
+    return
+end
 
 stream = RandStream('mt19937ar','Seed',S.seed);
 prior  = spm_hmm_set_priors(R,S);
@@ -166,7 +186,7 @@ F = F(1:it);
 function S = set_defaults(S)
 def = struct('T',[],'zeromean',false,'lifetime',10,'prior',struct(),...
     'init','random','initdiag',[],'ninit',5,'initcyc',10,'maxcyc',500,'tol',1e-7,...
-    'seed',0,'verbose',true,'keepgamma',true,'inference','batch','svi',struct());
+    'seed',0,'bestof',1,'verbose',true,'keepgamma',true,'inference','batch','svi',struct());
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}) || (isempty(S.(fn{i})) && ~isstruct(def.(fn{i})))
@@ -181,7 +201,7 @@ if ~any(strcmpi(S.inference,{'batch','stochastic'}))
     error('spm_hmm:invalidInput','S.inference must be ''batch'' or ''stochastic''.');
 end
 svi = struct('chunklength',1000,'buffer',100,'batchsize',32,'nepochs',20,...
-    'delay',1,'forget',0.7,'initchunks',64,'Fevery',0);
+    'delay',1,'forget',0.9,'initchunks',64,'Fevery',0);
 fn = fieldnames(svi);
 for i = 1:numel(fn)
     if ~isfield(S.svi,fn{i}) || isempty(S.svi.(fn{i}))

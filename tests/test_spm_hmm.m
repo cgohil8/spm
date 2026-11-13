@@ -361,7 +361,7 @@ function test_stochastic_inference_approaches_batch(testCase)
     testCase.verifyLessThan(abs(Hs.F - Hb.F),1e-4*abs(Hb.F));
     testCase.verifyGreaterThan(state_accuracy(Hs.gamma,s),0.95);
     rho = (1:numel(Hs.rho)) + 1;
-    testCase.verifyEqual(Hs.rho,rho.^(-0.7),'RelTol',1e-12);
+    testCase.verifyEqual(Hs.rho,rho.^(-0.9),'RelTol',1e-12);
 end
 
 function test_stochastic_reproducible_and_global_stream_untouched(testCase)
@@ -484,6 +484,103 @@ function test_meeg_stochastic(testCase)
         'UniformOutput',false),s),0.95);
 end
 
+% -------------------------------------------------------------------------
+% Time-delay embedding + PCA, complete-fit restarts, batch interface
+% -------------------------------------------------------------------------
+function test_tde_embedding_matches_explicit_construction(testCase)
+    Y = {randn(40,2), randn(25,2)};
+    Y{1}(10,:) = NaN;
+    lags = [-2 0 1 3];
+    [R,info] = spm_hmm_tde_pca(Y,struct('lags',lags,'npca',8,'standardise',false));
+    testCase.verifyEqual(R.T,[35; 20]);
+    testCase.verifyEqual(info.offset,2);
+    testCase.verifyEqual(info.W'*info.W,eye(8),'AbsTol',1e-12);
+    for i = 1:2
+        X = zeros(R.T(i),8);
+        for e = 1:4
+            X(:,(e-1)*2+(1:2)) = Y{i}((1:R.T(i)) + info.offset + lags(e),:);
+        end
+        Xr = R.read(i,1,R.T(i))*info.W' + info.mu;     % full basis: exact
+        testCase.verifyEqual(isnan(Xr(:,1)),any(isnan(X),2));
+        ok = ~any(isnan(X),2);
+        testCase.verifyEqual(Xr(ok,:),X(ok,:),'AbsTol',1e-12);
+    end
+    % rows that use sample 10 of segment 1 are missing
+    testCase.verifyEqual(find(any(isnan(R.read(1,1,35)),2))',sort(10 - info.offset - lags));
+end
+
+function test_tde_pca_components(testCase)
+    Y = {randn(500,3)*[1 .5 0; 0 1 .3; 0 0 1], randn(400,3)};
+    [R,info] = spm_hmm_tde_pca(Y,struct('lags',-2:2,'npca',4,'standardise',false));
+    Z = [R.read(1,1,R.T(1)); R.read(2,1,R.T(2))];
+    testCase.verifyEqual(cov(Z),diag(info.eigenvalues(1:4)),'AbsTol',1e-10);
+    testCase.verifyEqual(info.explained,sum(info.eigenvalues(1:4))/sum(info.eigenvalues),'AbsTol',1e-12);
+    % fraction of variance: smallest number of components reaching it
+    [~,info2] = spm_hmm_tde_pca(Y,struct('lags',-2:2,'npca',0.5));
+    c = cumsum(info.eigenvalues)/sum(info.eigenvalues);
+    testCase.verifyEqual(size(info2.W,2),find(c >= 0.5,1));
+    % standardised within groups
+    R = spm_hmm_tde_pca(Y,struct('lags',-2:2,'npca',4,'group',[1 2]));
+    Z = R.read(2,1,R.T(2));
+    testCase.verifyEqual(mean(Z),zeros(1,4),'AbsTol',1e-10);
+    testCase.verifyEqual(std(Z),ones(1,4),'AbsTol',1e-10);
+end
+
+function test_tde_hmm_recovers_states_with_different_dynamics(testCase)
+    % states share zero-lag covariance and differ only in autocorrelation:
+    % a zero-mean HMM cannot separate them, a TDE-HMM can
+    [Y,s] = ar_states_problem();
+    L  = 100;
+    H0 = spm_hmm(Y,struct('K',3,'zeromean',true,'verbose',false,'lifetime',L,'ninit',2));
+    testCase.verifyLessThan(state_accuracy(H0.gamma,s),0.6);
+    R  = spm_hmm_tde_pca(Y,struct('lags',-3:3,'npca',6));
+    H1 = spm_hmm(R,struct('K',3,'zeromean',true,'verbose',false,'lifetime',L,'ninit',2));
+    st = cellfun(@(x) x(4:end-3),s,'UniformOutput',false);       % offset 3
+    testCase.verifyGreaterThan(state_accuracy(H1.gamma,st),0.9);
+end
+
+function test_bestof_keeps_highest_free_energy(testCase)
+    Y = simulated_problem(false);
+    S = struct('K',3,'verbose',false,'ninit',1,'initcyc',2,'seed',5);
+    H = spm_hmm(Y,setfield(S,'bestof',3)); %#ok<SFLD>
+    testCase.verifyEqual(numel(H.Fbestof),3);
+    testCase.verifyEqual(H.F,max(H.Fbestof));
+    H1 = spm_hmm(Y,S);                          % first fit uses S.seed
+    testCase.verifyEqual(H.Fbestof(1),H1.F);
+end
+
+function test_batch_interface(testCase)
+    [Y,s] = ar_states_problem();
+    dd = tempname; mkdir(dd);
+    testCase.addTeardown(@rmdir,dd,'s');
+    files = cell(2,1);
+    for f = 1:2
+        D = meeg(3,size(Y{f},1),1);
+        D = fname(D,sprintf('s%d.mat',f)); D = path(D,dd); D = blank(D);
+        D(:,:,1) = Y{f}';
+        D = chanlabels(D,1:3,{'A','B','C'}); D = chantype(D,1:3,'LFP');
+        D = fsample(D,100); D = type(D,'continuous');
+        save(D); files{f} = fullfile(D);
+    end
+    spm_jobman('initcfg');
+    job{1}.spm.tools.hmm.D = files;
+    job{1}.spm.tools.hmm.K = 3;
+    job{1}.spm.tools.hmm.lifetime = 1;
+    job{1}.spm.tools.hmm.embedding.tde.lags = -3:3;
+    job{1}.spm.tools.hmm.embedding.tde.npca = 6;
+    out = spm_jobman('run',job);
+    m = load(out{1}.model{1});
+    testCase.verifyTrue(m.HMM.zeromean);                   % default with TDE
+    testCase.verifyEqual(m.HMM.tde.lags,-3:3);
+    st = cellfun(@(x) x(4:end-3),s,'UniformOutput',false);
+    testCase.verifyGreaterThan(state_accuracy(cellfun(@(p) onehot(double(p),3),...
+        m.HMM.path,'UniformOutput',false),st),0.9);
+    Do = spm_eeg_load(out{1}.Dfname{1});
+    G  = Do(:,:,1);
+    testCase.verifyTrue(all(isnan(reshape(G(:,[1:3 end-2:end]),[],1))));  % embedding edges
+    testCase.verifyEqual(sum(G(:,4:end-3),1),ones(1,size(G,2)-6),'AbsTol',1e-5);
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
@@ -551,6 +648,24 @@ for f = 1:2
     end
     save(D);
     files{f} = fullfile(D);
+end
+end
+
+function [Y,s] = ar_states_problem()
+% Two segments of 6000 samples, 3 channels, 3 states with lag-1
+% autocorrelation 0.9, 0 and -0.9 and unit variance (lifetime 100 samples)
+rs = RandStream('mt19937ar','Seed',2);
+K = 3; a = [0.9 0 -0.9]; L = 100;
+A = (1-1/L)*eye(K) + (1/L)/(K-1)*(1 - eye(K));
+cA = cumsum(A,2);
+Y = cell(2,1); s = cell(2,1);
+for i = 1:2
+    T  = 6000;
+    si = zeros(T,1); si(1) = randi(rs,K);
+    for t = 2:T, si(t) = find(rand(rs) < cA(si(t-1),:),1); end
+    e = randn(rs,T,3); y = zeros(T,3);
+    for t = 2:T, y(t,:) = a(si(t))*y(t-1,:) + sqrt(1 - a(si(t))^2)*e(t,:); end
+    Y{i} = y; s{i} = si;
 end
 end
 

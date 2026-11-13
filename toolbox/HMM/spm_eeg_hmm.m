@@ -11,6 +11,11 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %   .chantype     channel types, good channels only [{'MEEG','LFP','SRC'}]
 %   .conditions   condition labels of trials to use (epoched)  [all trials]
 %   .standardise  z-score channels within each dataset              [true]
+%   .tde          time-delay embedding and PCA (see spm_hmm_tde_pca):
+%                 struct with .lags (e.g. -7:7) and .npca (e.g. 80);
+%                 components are z-scored within each dataset when
+%                 .standardise is true. With embedding, states default to
+%                 zero mean (S.hmm.zeromean = true)          [none: struct()]
 %   .hmm          further options for spm_hmm (e.g. zeromean, inference,
 %                 svi, ninit, seed); S.K and S.lifetime take precedence
 %   .write        write state probabilities to new datasets         [true]
@@ -18,13 +23,15 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %
 % HMM           - fitted model (see spm_hmm), plus:
 %   .meeg         reader information (see spm_hmm_meeg_reader)
+%   .tde          embedding/PCA information (see spm_hmm_tde_pca), if used
 %   .stats        summary statistics per dataset, computed from the
 %                 Viterbi paths (see spm_hmm_summary_stats)
 %   .path         cell array of Viterbi paths, one per segment
 %   .missing      cell array of missing-sample masks, one per segment
 % Dout          - cell array of written datasets (if S.write): channels are
 %                 'State1'..'StateK' (type 'Other') holding q(s_t = k);
-%                 trials that were not modelled are NaN
+%                 trials that were not modelled, and samples lost at the
+%                 edges by time-delay embedding, are NaN
 %
 % Each good trial is a segment (continuous data: one per dataset). Bad
 % samples are treated as missing data. The data are read from disk as
@@ -40,7 +47,8 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %--------------------------------------------------------------------------
 if ~isfield(S,'K'), error('spm_hmm:invalidInput','S.K must be specified.'); end
 def = struct('lifetime',0.1,'channels',{{}},'chantype',{{'MEEG','LFP','SRC'}},...
-    'conditions',{{}},'standardise',true,'hmm',struct(),'write',true,'prefix','hmm_');
+    'conditions',{{}},'standardise',true,'tde',struct(),'hmm',struct(),...
+    'write',true,'prefix','hmm_');
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}), S.(fn{i}) = def.(fn{i}); end
@@ -56,12 +64,22 @@ end
 [R,info] = spm_hmm_meeg_reader(D,struct('channels',{S.channels},...
     'chantype',{S.chantype},'conditions',{S.conditions},'standardise',S.standardise));
 
+offset = 0;
+usetde = isfield(S.tde,'lags') && ~isempty(S.tde.lags);
+if usetde
+    [R,tde] = spm_hmm_tde_pca(R,struct('lags',S.tde.lags,'npca',S.tde.npca,...
+        'group',info.seg_file,'standardise',S.standardise));
+    offset  = tde.offset;
+    if ~isfield(S.hmm,'zeromean'), S.hmm.zeromean = true; end
+end
+
 O           = S.hmm;
 O.K         = S.K;
 O.lifetime  = S.lifetime*info.fsample;
 O.keepgamma = false;
 HMM         = spm_hmm(R,O);
 HMM.meeg    = info;
+if usetde, HMM.tde = tde; end
 
 %-Decode each segment, write state probabilities
 %--------------------------------------------------------------------------
@@ -75,8 +93,7 @@ if S.write
         Dout{f} = chanlabels(Dout{f},1:S.K,labels);
         Dout{f} = chantype(Dout{f},1:S.K,'Other');
         Dout{f} = units(Dout{f},1:S.K,'probability');
-        notused = setdiff(1:D{f}.ntrials,info.seg_trial(info.seg_file == f));
-        for t = notused(:)'
+        for t = 1:D{f}.ntrials
             Dout{f}(:,:,t) = NaN(S.K,D{f}.nsamples);
         end
     end
@@ -89,7 +106,7 @@ for i = 1:R.nseg
     HMM.missing{i} = m{1};
     if S.write
         f = info.seg_file(i);
-        Dout{f}(:,:,info.seg_trial(i)) = g{1}';
+        Dout{f}(:,offset+(1:R.T(i)),info.seg_trial(i)) = g{1}';
     end
 end
 if S.write

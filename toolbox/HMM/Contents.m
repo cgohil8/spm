@@ -7,6 +7,8 @@
 %   spm_hmm                  - fit the model (main function)
 %   spm_eeg_hmm              - fit the model to M/EEG datasets
 %   spm_hmm_meeg_reader      - read M/EEG datasets from disk as segments
+%   spm_hmm_tde_pca          - time-delay embedding + PCA (as a reader)
+%   tbx_cfg_hmm              - batch interface (SPM > Tools > HMM)
 %   spm_hmm_decode           - state probabilities and Viterbi paths
 %   spm_hmm_viterbi          - most probable state sequence (mode of q)
 %   spm_hmm_summary_stats    - occupancy, lifetimes, intervals, switching
