@@ -1,4 +1,4 @@
-function gamma = initial_state_probs(Y,S,prior,stream)
+function gamma = initial_state_probs(R,S,prior,stream)
 % Initial state probabilities for one initialisation
 %
 % 'random' follows HMM-MAR: a Markov state path is sampled for each segment
@@ -14,11 +14,11 @@ function gamma = initial_state_probs(Y,S,prior,stream)
 K = prior.K;
 if iscell(S.init)
     gamma = S.init(:);
-    if numel(gamma) ~= numel(Y)
+    if numel(gamma) ~= R.nseg
         error('spm_hmm:invalidInput','S.init must have one cell per segment.');
     end
-    for i = 1:numel(Y)
-        if ~isequal(size(gamma{i}),[size(Y{i},1) K]) || any(gamma{i}(:) < 0)
+    for i = 1:R.nseg
+        if ~isequal(size(gamma{i}),[R.T(i) K]) || any(gamma{i}(:) < 0)
             error('spm_hmm:invalidInput','S.init{%d} must be a non-negative [T_i x K] matrix.',i);
         end
         gamma{i} = gamma{i}./sum(gamma{i},2);
@@ -28,15 +28,15 @@ end
 
 switch lower(S.init)
     case 'random'
-        T = cellfun(@(y) size(y,1),Y);
+        T = R.T;
         d = S.initdiag;
         if isempty(d), d = min(median(T)/10,500); end
         d = max(d,1);
         P = (d-1)*eye(K) + ones(K);
         P = cumsum(P./sum(P,2),2);
         P(:,end) = 1;
-        gamma = cell(size(Y));
-        for i = 1:numel(Y)
+        gamma = cell(R.nseg,1);
+        for i = 1:R.nseg
             u = rand(stream,T(i),1);
             s = zeros(T(i),1);
             s(1) = randi(stream,K);

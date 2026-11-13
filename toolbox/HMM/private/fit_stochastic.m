@@ -1,6 +1,8 @@
-function [q,Fhist,Finit,rho] = fit_stochastic(Y,S,prior,stream)
+function [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream)
 % Stochastic variational inference for the HMM
-% FORMAT [q,Fhist,Finit,rho] = fit_stochastic(Y,S,prior,stream)
+% FORMAT [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream)
+%
+% R is a data reader (see data_reader).
 %
 % 1. Initialise: batch VB (S.ninit restarts, S.initcyc cycles) on a random
 %    subset of chunks treated as separate segments, with the full-data
@@ -18,8 +20,7 @@ function [q,Fhist,Finit,rho] = fit_stochastic(Y,S,prior,stream)
 
 
 o      = S.svi;
-T      = cellfun(@(y) size(y,1),Y);
-chunks = spm_hmm_make_chunks(T,o.chunklength,o.buffer);
+chunks = spm_hmm_make_chunks(R.T,o.chunklength,o.buffer);
 M      = size(chunks,1);
 
 %-Initialise on a subset of chunks
@@ -28,11 +29,12 @@ idx  = randperm(stream,M,min(M,o.initchunks));
 Ysub = cell(numel(idx),1);
 for j = 1:numel(idx)
     c = chunks(idx(j),:);
-    Ysub{j} = Y{c(1)}(c(2):c(3),:);
+    Ysub{j} = R.read(c(1),c(2),c(3));
 end
 Si          = S;
 Si.inference = 'batch';
 Si.T        = [];
+Si.keepgamma = false;
 Si.maxcyc   = S.initcyc;
 Si.verbose  = false;
 Si.seed     = randi(stream,2^31-1);
@@ -41,8 +43,8 @@ Si.prior    = struct('alpha0',prior.alpha0,'beta0',prior.beta0,'m0',prior.m0,...
 Hsub  = spm_hmm(Ysub,Si);
 Finit = Hsub.Finit;
 st    = spm_hmm_infer_states(Ysub,Hsub.q,prior);
-% every subset chunk starts a "segment"; the data have numel(Y) starts
-st.g1 = st.g1*numel(Y)/M;
+% every subset chunk starts a "segment"; the data have R.nseg starts
+st.g1 = st.g1*R.nseg/M;
 q     = spm_hmm_update_params(st,prior,[],1,M/numel(idx));
 if S.verbose
     fprintf('spm_hmm: initialised on %d of %d chunks, F(subset) = %.6g\n',...
@@ -62,11 +64,11 @@ for ep = 1:o.nepochs
         j  = perm((b-1)*nb+1:min(b*nb,M));
         i  = i + 1;
         rho(i) = (i + o.delay)^(-o.forget);
-        st = spm_hmm_infer_states_chunked(Y,chunks(j,:),q,prior);
+        st = spm_hmm_infer_states_chunked(R,chunks(j,:),q,prior);
         q  = spm_hmm_update_params(st,prior,q,rho(i),M/numel(j));
     end
     if o.Fevery > 0 && mod(ep,o.Fevery) == 0 && ep < o.nepochs
-        st = spm_hmm_infer_states(Y,q,prior);
+        st = spm_hmm_infer_states(R,q,prior);
         Fhist(end+1) = st.logZ - spm_hmm_kl_divergence(q,prior); %#ok<AGROW>
         if S.verbose
             fprintf('spm_hmm: epoch %d/%d, rho = %.3g, F = %.8g\n',ep,o.nepochs,rho(i),Fhist(end));

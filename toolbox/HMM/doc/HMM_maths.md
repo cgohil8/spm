@@ -290,11 +290,28 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 - Only this F is used to choose between restarts or values of K.
 - **Sanity check:** with chunks equal to whole segments, $\mathcal B$ equal to all chunks and $\rho=1$, the SVI update reduces exactly to the batch update. This is verified in §13 H.
 
-## 9. Decoding
+## 9. Decoding and summary statistics
 
 - The state probabilities are $\gamma$ from the final full E-step.
-- The Viterbi path is the mode of $q(s)$, as in §4.
-- Summary statistics are fractional occupancy, lifetimes, interval times and switching rate. They are computed from the Viterbi path or from thresholded $\gamma$, and should use the same definitions as osl-dynamics.
+- The Viterbi path is the mode of $q(s)$, as in §4. It is computed by max-product on $(\log\tilde{\boldsymbol\pi},\log\tilde{\mathbf A},\log\tilde{\mathbf b})$ and checked against enumeration.
+- **Summary statistics** are computed per group, for example per dataset, from state sequences. They use the osl-dynamics definitions:
+  - a **visit** is a run of consecutive samples in one state, including runs cut off at the start or end of a segment;
+  - a **lifetime** is the length of a visit;
+  - an **interval** is the number of samples between the end of one visit and the start of the next;
+  - the **switching rate** counts entries into a state after the first sample, per second;
+  - **fractional occupancy** is the proportion of samples in each state.
+- With no missing samples, our results equal osl-dynamics' to $10^{-15}$ (checked on 3 random paths).
+- **Missing samples** are not observed time. Each segment is split at missing samples, so no visit or interval spans a gap, and missing samples are left out of the occupancy and switching-rate denominators.
+
+## 9a. M/EEG data
+
+- **Datasets** are read on demand from SPM's memory-mapped `meeg` files.
+- **Segments:** each good trial is a segment (one per dataset for continuous data). Bad trials are skipped.
+- **Missing samples:** a sample is missing if any selected channel is bad there, according to artefact events, as in `meeg/badsamples`.
+- **Channels** are matched by label across datasets. By default all good MEEG/LFP/SRC channels are used.
+- **Standardisation** (default on): each channel is z-scored within each dataset, using the mean and SD of its good samples in the selected trials. This matches the data assumption of §10.
+- **Lifetime prior:** the sticky-prior lifetime is given in seconds and converted using the sampling rate.
+- **Output datasets:** state probabilities are written to new `meeg` datasets with channels `State1..K` of type 'Other'. Trials that were not modelled are filled with NaN.
 
 ## 10. Priors (defaults and rationale)
 
@@ -362,7 +379,9 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 - **Dead states:** report $N_k$ and leave them alone; there is no forced pruning in version 1.
 - **MATLAB compatibility:** the code must run on R2020b, the oldest release in CI.
 
-## 13. Verification (`hmm_maths_check.m`, MATLAB R2026b)
+## 13. Verification (MATLAB R2026b)
+
+**Formulas (`hmm_maths_check.m`, then `tests/test_spm_hmm.m`):**
 
 | check | result |
 |---|---|
@@ -378,7 +397,30 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | H. SVI with $\rho=1$, full batch, chunks equal to segments, against the batch update | $4.5\times10^{-13}$ |
 | H. Bias of $M/|\mathcal B|$ scaling (4000 random batches of segments with unequal lengths) | within Monte Carlo noise |
 
-These checks become the core of `tests/test_spm_hmm_*.m`.
+**Stochastic inference (phase 2):**
+
+| check | result |
+|---|---|
+| Chunks equal to whole segments: chunked E-step against full E-step (with missing samples) | agree to $10^{-11}$ |
+| Chunks of unequal length processed together, against one at a time (padding is neutral) | agree to $10^{-12}$ |
+| Owned statistics of 250-sample chunks with a 50-sample buffer, summed, against full-data statistics | agree to $10^{-15}$ (buffer 1: $10^{-2}$; buffer 5: $10^{-5}$) |
+| Stochastic inference with $\rho=1$, all chunks in each batch, chunks equal to segments | F never decreases (it is batch VB) |
+| Stochastic inference against batch VB (3,500 samples; 250-sample chunks; 4 chunks per batch) | relative F difference $2\times10^{-5}$; >95% of states recovered |
+| Benchmark: 40 × 10,000 samples, D = 10, K = 6, zero mean (not in CI) | batch 8.8 s; stochastic 3.7 s for 10 epochs; F gap 0.9–2.4 nats ($2$–$6\times10^{-6}$ per sample), shrinking every epoch |
+
+**Decoding, statistics and M/EEG (phase 3):**
+
+| check | result |
+|---|---|
+| Viterbi path and score against enumeration ($K=3$, $T=7$, one missing sample) | identical path; score to $10^{-10}$ |
+| `spm_hmm_decode` against the state probabilities from the fit | agree to $10^{-12}$ |
+| Summary statistics on a hand-worked path (with and without a missing sample, and pooled) | exact |
+| Summary statistics against osl-dynamics `post_hoc` (3 random paths, $K=4$; not in CI) | agree to $\le4\times10^{-15}$ |
+| Synthetic continuous `meeg` (2 datasets, artefact on one channel, extra 'Other' channel) | right channels; the 51 artefact samples are missing; standardised to mean 0, SD 1; >95% of states decoded correctly; output datasets valid |
+| Synthetic epoched `meeg` (bad trial, conditions) | bad trial excluded and written as NaN; condition selection |
+| Stochastic inference on `meeg` read from disk | >95% of states decoded correctly |
+
+The checks in all three tables are in `tests/test_spm_hmm.m`, except the two marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -403,6 +445,10 @@ These checks become the core of `tests/test_spm_hmm_*.m`.
 | §6.3 KL terms | `spm_hmm_kl_divergence` |
 | §6.1 general F | `spm_hmm_free_energy` |
 | §6.2, §6.5, §11 fitting loop, restarts, $F+\log K!$ | `spm_hmm` |
+| §9 decoding, Viterbi | `spm_hmm_decode`, `spm_hmm_viterbi` |
+| §9 summary statistics | `spm_hmm_summary_stats` |
+| §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
+| all data access (memory or disk) | `private/data_reader` |
 | simulation | `spm_hmm_simulate` |
 | tests | `tests/test_spm_hmm.m` |
 

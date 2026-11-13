@@ -2,7 +2,8 @@ function prior = spm_hmm_set_priors(Y,S)
 % Prior distributions for the variational Bayesian HMM
 % FORMAT prior = spm_hmm_set_priors(Y,S)
 %
-% Y      - cell array of [T_i x D] segments (rows with NaN are missing)
+% Y      - data: cell array of [T_i x D] segments, or a data reader
+%          (see spm_hmm_infer_states); rows with NaN are missing
 % S      - options (see spm_hmm): uses S.K, S.zeromean, S.lifetime and
 %          the overrides in S.prior
 %
@@ -34,19 +35,23 @@ function prior = spm_hmm_set_priors(Y,S)
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
+R  = data_reader(Y);
 K  = S.K;
-D  = size(Y{1},2);
+D  = R.D;
 zm = logical(S.zeromean);
 if isfield(S,'prior') && ~isempty(S.prior), P = S.prior; else, P = struct(); end
 
 %-Pooled first and second moments of the observed samples
 %--------------------------------------------------------------------------
 n = 0; s1 = zeros(1,D); s2 = zeros(1,D);
-for i = 1:numel(Y)
-    y  = Y{i}(~any(isnan(Y{i}),2),:);
-    n  = n  + size(y,1);
-    s1 = s1 + sum(y,1);
-    s2 = s2 + sum(y.^2,1);
+for i = 1:R.nseg
+    for lo = 1:1e5:R.T(i)
+        y  = R.read(i,lo,min(lo+1e5-1,R.T(i)));
+        y  = y(~any(isnan(y),2),:);
+        n  = n  + size(y,1);
+        s1 = s1 + sum(y,1);
+        s2 = s2 + sum(y.^2,1);
+    end
 end
 if n == 0, error('spm_hmm:invalidInput','All samples are missing.'); end
 mu = s1/n;

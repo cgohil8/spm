@@ -2,7 +2,9 @@ function [st,H,gamma] = spm_hmm_infer_states(Y,q,prior)
 % E-step: update q(states) and accumulate sufficient statistics
 % FORMAT [st,H,gamma] = spm_hmm_infer_states(Y,q,prior)
 %
-% Y      - cell array of [T_i x D] segments (rows with NaN are missing)
+% Y      - data: cell array of [T_i x D] segments, [T x D] matrix (one
+%          segment), or a data reader (see spm_hmm_meeg_reader).
+%          Rows with NaN are missing samples.
 % q      - posterior over parameters (see spm_hmm_update_params)
 % prior  - prior (see spm_hmm_set_priors)
 %
@@ -18,23 +20,44 @@ function [st,H,gamma] = spm_hmm_infer_states(Y,q,prior)
 %   (m0 = prior.m0 for models with means, 0 for zero-mean models)
 % H      - entropy of q(states)
 % gamma  - cell array of [T_i x K] state probabilities
+%
+% Each segment is read in blocks, so only its [T_i x K] emission terms and
+% state probabilities are held in memory, not the data.
 %__________________________________________________________________________
 
 % Chetan Gohil
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
-st = empty_sufficient_stats(q.K,q.D);
-H  = 0;
-if nargout > 2, gamma = cell(size(Y)); end
-for i = 1:numel(Y)
-    y    = Y{i};
-    miss = any(isnan(y),2);
-    lb   = spm_hmm_expected_loglik(y,q);
-    lb(miss,:) = 0;
+R     = data_reader(Y);
+block = 1e5;
+K     = q.K;
+st    = empty_sufficient_stats(K,q.D);
+H     = 0;
+if nargout > 2, gamma = cell(R.nseg,1); end
+for i = 1:R.nseg
+    T    = R.T(i);
+    lb   = zeros(T,K);
+    miss = false(T,1);
+    for lo = 1:block:T
+        hi = min(lo+block-1,T);
+        y  = R.read(i,lo,hi);
+        m  = any(isnan(y),2);
+        l  = spm_hmm_expected_loglik(y,q);
+        l(m,:) = 0;
+        lb(lo:hi,:)  = l;
+        miss(lo:hi)  = m;
+    end
     [g,Xi,logZ] = spm_hmm_forward_backward(q.lpi,q.lA,lb);
 
-    st      = accumulate_obs_stats(st,y,g,miss,prior);
+    if T <= block                       % data of this segment still in y
+        st = accumulate_obs_stats(st,y,g,miss,prior);
+    else
+        for lo = 1:block:T
+            hi = min(lo+block-1,T);
+            st = accumulate_obs_stats(st,R.read(i,lo,hi),g(lo:hi,:),miss(lo:hi),prior);
+        end
+    end
     st.Xi   = st.Xi + Xi;
     st.g1   = st.g1 + g(1,:);
     st.logZ = st.logZ + logZ;

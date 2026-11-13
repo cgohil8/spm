@@ -2,7 +2,8 @@ function [st,gamma] = spm_hmm_infer_states_chunked(Y,chunks,q,prior)
 % E-step on buffered chunks (used by stochastic inference)
 % FORMAT [st,gamma] = spm_hmm_infer_states_chunked(Y,chunks,q,prior)
 %
-% Y       - cell array of [T_i x D] segments (rows with NaN are missing)
+% Y       - data: cell array of [T_i x D] segments, or a data reader
+%           (see spm_hmm_infer_states); rows with NaN are missing
 % chunks  - [n x 5] matrix [segment a b lo hi]: interior [a,b] and window
 %           [lo,hi] of each chunk within its segment
 % q       - posterior over parameters (see spm_hmm_update_params)
@@ -27,6 +28,7 @@ function [st,gamma] = spm_hmm_infer_states_chunked(Y,chunks,q,prior)
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
+R  = data_reader(Y);
 K  = q.K;
 C  = size(chunks,1);
 lo = chunks(:,4);
@@ -37,7 +39,7 @@ Lw = max(n);
 %--------------------------------------------------------------------------
 yw = cell(C,1);
 for c = 1:C
-    yw{c} = Y{chunks(c,1)}(lo(c):chunks(c,5),:);
+    yw{c} = R.read(chunks(c,1),lo(c),chunks(c,5));
 end
 yall = cat(1,yw{:});
 miss = any(isnan(yall),2);

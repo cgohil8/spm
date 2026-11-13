@@ -11,6 +11,7 @@ classdef test_spm_hmm < matlab.unittest.TestCase
 
 methods (TestClassSetup)
 function add_toolbox_to_path(testCase)
+    spm('defaults','eeg');
     p = fullfile(spm('Dir'),'toolbox','HMM');
     addpath(p);
     testCase.addTeardown(@rmpath,p);
@@ -376,6 +377,113 @@ function test_stochastic_reproducible_and_global_stream_untouched(testCase)
     testCase.verifyTrue(isfinite(H1.F));
 end
 
+% -------------------------------------------------------------------------
+% Decoding and summary statistics
+% -------------------------------------------------------------------------
+function test_viterbi_against_enumeration(testCase)
+    K = 3; T = 7;
+    [q,~] = random_posterior(2,K,false);
+    lb = spm_hmm_expected_loglik(randn(T,2),q);
+    lb(4,:) = 0;                                % a missing sample
+    [path,score] = spm_hmm_viterbi(q.lpi,q.lA,lb);
+    best = -Inf;
+    for i = 1:K^T
+        s  = 1 + mod(floor((i-1)./K.^(0:T-1)),K);
+        sc = q.lpi(s(1)) + sum(q.lA(sub2ind([K K],s(1:end-1),s(2:end)))) ...
+           + sum(lb(sub2ind([T K],1:T,s)));
+        if sc > best, best = sc; bs = s(:); end
+    end
+    testCase.verifyEqual(path,bs);
+    testCase.verifyEqual(score,best,'AbsTol',1e-10);
+end
+
+function test_decode_matches_fit(testCase)
+    Y = simulated_problem(false);
+    Y{1}(10:20,:) = NaN;
+    HMM = spm_hmm(Y,struct('K',3,'verbose',false,'ninit',2));
+    [g,p,m] = spm_hmm_decode(Y,HMM);
+    testCase.verifyEqual(g,HMM.gamma,'AbsTol',1e-12);
+    testCase.verifyEqual(find(m{1})',10:20);
+    % the Viterbi path mostly agrees with the marginal argmax
+    [~,v] = max(g{2},[],2);
+    testCase.verifyGreaterThan(mean(v == p{2}),0.95);
+end
+
+function test_summary_stats_by_hand(testCase)
+    p  = [1 1 2 2 2 1 3 3 1 1]';
+    st = spm_hmm_summary_stats(p,3,2);
+    testCase.verifyEqual(st.fo,[0.5 0.3 0.2],'AbsTol',1e-12);
+    testCase.verifyEqual(st.lifetimes{1},[1; 0.5; 1]);
+    testCase.verifyEqual(st.mean_lifetime,[2.5/3 1.5 1],'AbsTol',1e-12);
+    testCase.verifyEqual(st.intervals{1},[1.5; 1]);
+    testCase.verifyEqual(st.mean_interval,[1.25 NaN NaN]);
+    testCase.verifyEqual(st.switching_rate,[0.4 0.2 0.2],'AbsTol',1e-12);
+    testCase.verifyEqual(st.duration,5);
+    % a missing sample splits the sequence: no visit or interval spans it
+    m  = false(10,1); m(4) = true;
+    st = spm_hmm_summary_stats(p,3,2,m);
+    testCase.verifyEqual(st.fo,[5 2 2]/9,'AbsTol',1e-12);
+    testCase.verifyEqual(st.lifetimes{2},[0.5; 0.5]);
+    testCase.verifyEqual(st.switching_rate,[2 1 1]*2/9,'AbsTol',1e-12);
+    testCase.verifyEqual(st.duration,4.5);
+    % pooling segments within a group
+    st = spm_hmm_summary_stats({p,p,[3 3]'},3,2,[],[1 1 2]);
+    testCase.verifyEqual(st.fo,[0.5 0.3 0.2; 0 0 1],'AbsTol',1e-12);
+    testCase.verifyEqual(numel(st.lifetimes{1,1}),6);
+end
+
+% -------------------------------------------------------------------------
+% M/EEG datasets
+% -------------------------------------------------------------------------
+function test_meeg_continuous(testCase)
+    [files,s] = make_meeg_datasets(testCase,'continuous');
+    [R,info] = spm_hmm_meeg_reader(files);
+    testCase.verifyEqual(info.chanlabels,{'P1','P2','P3','P4'});  % TRIG excluded
+    testCase.verifyEqual(R.T,[3000; 2500]);
+    y = R.read(1,1,3000);
+    bad = any(isnan(y),2);
+    testCase.verifyEqual(find(bad)',401:451);                       % 2.00-2.25 s
+    testCase.verifyEqual(mean(y(~bad,:)),zeros(1,4),'AbsTol',1e-10);
+    testCase.verifyEqual(std(y(~bad,:)),ones(1,4),'AbsTol',1e-10);
+    testCase.verifyEqual(R.read(2,101,200),y2_expected(files{2},info,101,200),'AbsTol',1e-10);
+
+    [HMM,Dout] = spm_eeg_hmm(struct('D',{files},'K',3,'hmm',struct('verbose',false)));
+    testCase.verifyGreaterThan(state_accuracy(cellfun(@(p) onehot(double(p),3),HMM.path,...
+        'UniformOutput',false),s),0.95);
+    testCase.verifyEqual(size(Dout{1}),[3 3000 1]);
+    testCase.verifyEqual(Dout{1}.chanlabels,{'State1','State2','State3'});
+    G = Dout{1}(:,:,1);
+    testCase.verifyEqual(sum(G,1),ones(1,3000),'AbsTol',1e-6);      % float32
+    testCase.verifyEqual(size(HMM.stats.fo),[2 3]);
+    testCase.verifyEqual(sum(HMM.stats.fo,2),[1; 1],'AbsTol',1e-12);
+    testCase.verifyEqual(HMM.stats.duration,[2949; 2500]/200);
+    % sticky prior was set from the lifetime in seconds
+    b = HMM.prior.beta0;
+    testCase.verifyEqual(b(1,1)/sum(b(1,:)),1 - 1/(0.1*200),'AbsTol',1e-12);
+end
+
+function test_meeg_epoched(testCase)
+    files = make_meeg_datasets(testCase,'epoched');
+    [R,info] = spm_hmm_meeg_reader(files(1));
+    testCase.verifyEqual(R.nseg,9);                        % trial 3 is bad
+    testCase.verifyFalse(any(info.seg_trial == 3));
+    [~,info] = spm_hmm_meeg_reader(files(1),struct('conditions',{{'A'}}));
+    testCase.verifyEqual(info.seg_trial',[1 5 7 9]);      % odd trials, not 3
+    [HMM,Dout] = spm_eeg_hmm(struct('D',{files(1)},'K',2,'hmm',struct('verbose',false,'ninit',2)));
+    testCase.verifyEqual(numel(HMM.path),9);
+    testCase.verifyTrue(all(isnan(reshape(Dout{1}(:,:,3),[],1))));
+    testCase.verifyFalse(any(isnan(reshape(Dout{1}(:,:,4),[],1))));
+end
+
+function test_meeg_stochastic(testCase)
+    [files,s] = make_meeg_datasets(testCase,'continuous');
+    O = struct('verbose',false,'inference','stochastic',...
+        'svi',struct('chunklength',500,'buffer',50,'batchsize',4,'nepochs',10));
+    HMM = spm_eeg_hmm(struct('D',{files},'K',3,'hmm',O,'write',false));
+    testCase.verifyGreaterThan(state_accuracy(cellfun(@(p) onehot(double(p),3),HMM.path,...
+        'UniformOutput',false),s),0.95);
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
@@ -395,6 +503,65 @@ function verify_mc(testCase,samples,expected)
 % Monte Carlo mean must lie within 4 standard errors of the expectation
 se = std(samples)/sqrt(numel(samples));
 testCase.verifyLessThan(abs(mean(samples) - expected),4*se + 1e-12);
+end
+
+function [files,s] = make_meeg_datasets(testCase,kind)
+% Two synthetic datasets (4 'LFP' channels from a 3-state HMM, scaled and
+% offset, plus a 'TRIG' channel of type 'Other') in a temporary folder.
+% continuous: dataset 1 has an artefact on P2 from 2.00 to 2.25 s.
+% epoched:    10 trials of 300 samples, conditions A/B alternating,
+%             trial 3 marked bad.
+dd = tempname; mkdir(dd);
+testCase.addTeardown(@rmdir,dd,'s');
+rs = RandStream('mt19937ar','Seed',3);
+K = 3; Dc = 4; fs = 200;
+M.pi = ones(1,K)/K;
+M.A  = 0.95*eye(K) + 0.05/(K-1)*(1 - eye(K));
+M.mu = 1.5*randn(rs,Dc,K);
+for k = 1:K
+    X = randn(rs,Dc,2*Dc);
+    M.Sigma(:,:,k) = X*X'/(2*Dc) + 0.2*eye(Dc);
+end
+if strcmp(kind,'continuous'), T = [3000 2500]; ntr = 1; else, T = [3000 3000]; ntr = 10; end
+[Y,s] = spm_hmm_simulate(M,T,rs);
+labels = [arrayfun(@(i) sprintf('P%d',i),1:Dc,'UniformOutput',false) {'TRIG'}];
+files = cell(1,2);
+for f = 1:2
+    ns = T(f)/ntr;
+    D  = meeg(Dc+1,ns,ntr);
+    D  = fname(D,sprintf('%s%d.mat',kind,f));
+    D  = path(D,dd);
+    D  = blank(D);
+    x  = [3*Y{f}' + 10; randn(rs,1,T(f))];
+    D(:,:,:) = reshape(x,Dc+1,ns,ntr);
+    D  = chanlabels(D,1:Dc+1,labels);
+    D  = chantype(D,1:Dc,'LFP');
+    D  = chantype(D,Dc+1,'Other');
+    D  = fsample(D,fs);
+    if ntr == 1
+        D = type(D,'continuous');
+        if f == 1
+            ev = struct('type','artefact_test','value','P2','time',2,'duration',0.25,'offset',0);
+            D  = events(D,1,ev);
+        end
+    else
+        D = type(D,'single');
+        D = conditions(D,1:ntr,repmat({'A','B'},1,ntr/2));
+        D = badtrials(D,3,1);
+    end
+    save(D);
+    files{f} = fullfile(D);
+end
+end
+
+function y = y2_expected(file,info,lo,hi)
+% raw data of dataset 2, standardised with the reader's parameters
+D = spm_eeg_load(file);
+y = (double(D(1:4,lo:hi,1))' - info.mu(2,:))./info.sd(2,:);
+end
+
+function g = onehot(p,K)
+g = full(sparse(1:numel(p),p,1,numel(p),K));
 end
 
 function verify_stats_equal(testCase,a,b,tol)

@@ -2,8 +2,9 @@ function HMM = spm_hmm(Y,S)
 % Variational Bayesian hidden Markov model with Gaussian observations
 % FORMAT HMM = spm_hmm(Y,S)
 %
-% Y          - data: [T x D] matrix, or cell array of [T_i x D] matrices.
-%              Each cell (or each block given by S.T) is a separate segment
+% Y          - data: [T x D] matrix, cell array of [T_i x D] matrices, or
+%              a data reader (e.g. from spm_hmm_meeg_reader, for data on
+%              disk). Each cell (or each block given by S.T) is a segment
 %              (session or trial), i.e. an independent Markov chain.
 %              Rows containing NaN are treated as missing samples: the chain
 %              continues through them but they carry no observation.
@@ -28,6 +29,7 @@ function HMM = spm_hmm(Y,S)
 %   .tol       convergence: change in F < tol*|F|                   [1e-7]
 %   .seed      random seed (the global random stream is not used)      [0]
 %   .verbose   print progress                                       [true]
+%   .keepgamma return state probabilities in HMM.gamma              [true]
 %   .inference 'batch' or 'stochastic'                             ['batch']
 %   .svi       stochastic variational inference options:
 %     .chunklength  samples per chunk                                 [1000]
@@ -72,16 +74,20 @@ function HMM = spm_hmm(Y,S)
 %--------------------------------------------------------------------------
 if nargin < 2 || ~isfield(S,'K'), error('spm_hmm:invalidInput','S.K must be specified.'); end
 S = set_defaults(S);
-Y = prepare_segments(Y,S);
+R = data_reader(Y,S.T);
 
 stream = RandStream('mt19937ar','Seed',S.seed);
-prior  = spm_hmm_set_priors(Y,S);
+prior  = spm_hmm_set_priors(R,S);
 
 if strcmpi(S.inference,'stochastic')
     %-Stochastic variational inference
     %----------------------------------------------------------------------
-    [q,Fhist,Finit,rho] = fit_stochastic(Y,S,prior,stream);
-    [st,~,gamma] = spm_hmm_infer_states(Y,q,prior);
+    [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream);
+    if S.keepgamma
+        [st,~,gamma] = spm_hmm_infer_states(R,q,prior);
+    else
+        st = spm_hmm_infer_states(R,q,prior); gamma = {};
+    end
     KL    = spm_hmm_kl_divergence(q,prior);
     Fhist = [Fhist st.logZ - KL];
 else
@@ -90,9 +96,9 @@ else
     best  = struct('F',-Inf,'q',[]);
     Finit = zeros(1,S.ninit);
     for r = 1:S.ninit
-        gamma = initial_state_probs(Y,S,prior,stream);
-        q     = spm_hmm_update_params(sufficient_stats_from_probs(Y,gamma,prior),prior);
-        [q,F] = run_variational_bayes(Y,q,prior,S.initcyc,S.tol,false);
+        gamma = initial_state_probs(R,S,prior,stream);
+        q     = spm_hmm_update_params(sufficient_stats_from_probs(R,gamma,prior),prior);
+        [q,F] = run_variational_bayes(R,q,prior,S.initcyc,S.tol,false,false);
         Finit(r) = F(end);
         if S.verbose
             fprintf('spm_hmm: initialisation %d/%d, F = %.6g\n',r,S.ninit,F(end));
@@ -102,7 +108,7 @@ else
 
     %-Variational Bayes
     %----------------------------------------------------------------------
-    [q,Fhist,st,gamma,KL] = run_variational_bayes(Y,best.q,prior,S.maxcyc,S.tol,S.verbose);
+    [q,Fhist,st,gamma,KL] = run_variational_bayes(R,best.q,prior,S.maxcyc,S.tol,S.verbose,S.keepgamma);
     rho = [];
 end
 
@@ -126,15 +132,16 @@ HMM.options  = S;
 
 
 %==========================================================================
-function [q,F,st,gamma,KL] = run_variational_bayes(Y,q,prior,maxcyc,tol,verbose)
+function [q,F,st,gamma,KL] = run_variational_bayes(R,q,prior,maxcyc,tol,verbose,keepgamma)
 % Alternate E- and M-steps; F is evaluated after each E-step, so the
 % returned q, gamma and F are mutually consistent.
 F = zeros(1,maxcyc);
 for it = 1:maxcyc
-    if nargout > 3
-        [st,~,gamma] = spm_hmm_infer_states(Y,q,prior);
+    if keepgamma
+        [st,~,gamma] = spm_hmm_infer_states(R,q,prior);
     else
-        st = spm_hmm_infer_states(Y,q,prior);
+        st = spm_hmm_infer_states(R,q,prior);
+        gamma = {};
     end
     KL    = spm_hmm_kl_divergence(q,prior);
     F(it) = st.logZ - KL;
@@ -159,7 +166,7 @@ F = F(1:it);
 function S = set_defaults(S)
 def = struct('T',[],'zeromean',false,'lifetime',10,'prior',struct(),...
     'init','random','initdiag',[],'ninit',5,'initcyc',10,'maxcyc',500,'tol',1e-7,...
-    'seed',0,'verbose',true,'inference','batch','svi',struct());
+    'seed',0,'verbose',true,'keepgamma',true,'inference','batch','svi',struct());
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}) || (isempty(S.(fn{i})) && ~isstruct(def.(fn{i})))
