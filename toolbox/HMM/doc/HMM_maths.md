@@ -1,0 +1,399 @@
+# Variational Bayesian HMM with Gaussian observations: maths note
+
+Design note for `toolbox/HMM`. Every update and free-energy term the code will
+implement is listed here. Each one has been checked numerically by
+`hmm_maths_check.m`, which sits in this folder. Section 13 lists those checks.
+
+---
+
+## 1. Notation and generative model
+
+- Data: $\mathbf{y}_t \in \mathbb{R}^D$ for $t = 1,\dots,T$, split into **segments**
+  (sessions, continuous recordings, or trials). Each segment is a separate Markov chain.
+- Hidden states: $s_t \in \{1,\dots,K\}$.
+
+$$
+\begin{aligned}
+\boldsymbol\pi &\sim \mathrm{Dir}(\boldsymbol\alpha_0), &
+s_{\text{first}} \mid \boldsymbol\pi &\sim \mathrm{Cat}(\boldsymbol\pi)\quad\text{(first sample of every segment)}\\
+\mathbf{A}_{i\cdot} &\sim \mathrm{Dir}(\boldsymbol\beta_{0,i\cdot}), &
+s_t \mid s_{t-1}=i,\mathbf{A} &\sim \mathrm{Cat}(\mathbf{A}_{i\cdot})\\
+\boldsymbol\Lambda_k &\sim \mathcal{W}(\mathbf{W}_0,\nu_0), &
+\boldsymbol\mu_k \mid \boldsymbol\Lambda_k &\sim \mathcal{N}\!\left(\mathbf{m}_0,(\kappa_0\boldsymbol\Lambda_k)^{-1}\right)\\
+& & \mathbf{y}_t \mid s_t=k &\sim \mathcal{N}\!\left(\boldsymbol\mu_k,\boldsymbol\Lambda_k^{-1}\right)
+\end{aligned}
+$$
+
+**Zero-mean option.** Set $\boldsymbol\mu_k \equiv \mathbf{0}$ and keep only $\boldsymbol\Lambda_k \sim \mathcal{W}(\mathbf{W}_0,\nu_0)$.
+This is used for time-delay-embedded (TDE) and covariance-only models.
+
+**Wishart convention.** $\mathbf{W}$ is the *scale* matrix, so $\mathbb{E}[\boldsymbol\Lambda] = \nu\mathbf{W}$. The density is
+
+$$
+\log\mathcal{W}(\boldsymbol\Lambda\mid\mathbf{W},\nu)=\tfrac{\nu-D-1}{2}\log|\boldsymbol\Lambda|-\tfrac12\mathrm{tr}(\mathbf{W}^{-1}\boldsymbol\Lambda)
+-\tfrac{\nu D}{2}\log 2-\tfrac{\nu}{2}\log|\mathbf{W}|-\log\Gamma_D(\tfrac{\nu}{2}),
+$$
+
+with $\log\Gamma_D(a)=\tfrac{D(D-1)}{4}\log\pi+\sum_{d=1}^{D}\log\Gamma\!\left(a+\tfrac{1-d}{2}\right)$ and
+$\psi_D(a)=\sum_{d=1}^{D}\psi\!\left(a+\tfrac{1-d}{2}\right)$. A proper prior needs $\nu > D-1$.
+(SPM's `spm_lg_gamma` gets $\log\Gamma_D$ wrong; see §14.)
+
+## 2. Variational family
+
+$$
+q(s_{1:T},\boldsymbol\theta)=q(s_{1:T})\;q(\boldsymbol\pi)\;q(\mathbf{A})\;\prod_{k=1}^K q(\boldsymbol\mu_k,\boldsymbol\Lambda_k)
+$$
+
+- $q(s_{1:T})$ is **not** factorised over time. Its optimum is a Markov chain, so we infer it exactly
+  by forward–backward.
+- $q(\boldsymbol\pi)=\mathrm{Dir}(\mathbf{a})$, and $q(\mathbf{A}_{i\cdot})=\mathrm{Dir}(\mathbf{B}_{i\cdot})$ independently for each row.
+- $q(\boldsymbol\mu_k,\boldsymbol\Lambda_k)=\mathcal{N}(\boldsymbol\mu_k\mid\mathbf{m}_k,(\kappa_k\boldsymbol\Lambda_k)^{-1})\,\mathcal{W}(\boldsymbol\Lambda_k\mid\mathbf{W}_k,\nu_k)$.
+  This is the joint Normal–Wishart posterior, which is the exact conditional form. We do **not** factorise $\boldsymbol\mu_k$ and $\boldsymbol\Lambda_k$ apart.
+
+Given $q(s)$, the parameter factors are conditionally independent. So one M-step that updates all of them
+together is an exact coordinate-ascent step.
+
+## 3. Expectations needed
+
+$$
+\begin{aligned}
+\log\tilde\pi_k &= \psi(a_k)-\psi\!\left(\textstyle\sum_j a_j\right) &&= \mathbb{E}_q[\log\pi_k]\\
+\log\tilde A_{ij} &= \psi(B_{ij})-\psi\!\left(\textstyle\sum_j B_{ij}\right) &&= \mathbb{E}_q[\log A_{ij}]\\
+\mathbb{E}_q\log|\boldsymbol\Lambda_k| &= \psi_D(\nu_k/2)+D\log 2+\log|\mathbf{W}_k|\\
+\mathbb{E}_q\!\left[(\mathbf{y}-\boldsymbol\mu_k)^\top\boldsymbol\Lambda_k(\mathbf{y}-\boldsymbol\mu_k)\right] &= D/\kappa_k+\nu_k(\mathbf{y}-\mathbf{m}_k)^\top\mathbf{W}_k(\mathbf{y}-\mathbf{m}_k)
+\end{aligned}
+$$
+
+The **expected log emission** is then
+
+$$
+\log\tilde b_{tk}=\mathbb{E}_q\log\mathcal{N}(\mathbf{y}_t\mid\boldsymbol\mu_k,\boldsymbol\Lambda_k^{-1})
+=-\tfrac D2\log 2\pi+\tfrac12\mathbb{E}_q\log|\boldsymbol\Lambda_k|-\tfrac12\!\left[\tfrac{D}{\kappa_k}+\nu_k(\mathbf{y}_t-\mathbf{m}_k)^\top\mathbf{W}_k(\mathbf{y}_t-\mathbf{m}_k)\right].
+$$
+
+In the zero-mean case, drop $D/\kappa_k$ and set $\mathbf{m}_k=\mathbf{0}$.
+
+$\tilde{\mathbf{A}}=\exp(\log\tilde{\mathbf{A}})$ has rows summing to **less than 1**. **It must not be renormalised.**
+The sub-normalised matrix is exactly what makes $q(s)$ optimal. Renormalising it is the approximation HMM-MAR makes.
+
+## 4. Update of q(s): forward–backward
+
+$q(s_{1:T}) \propto \prod_{\text{seg}} \tilde\pi_{s_\text{first}}\prod_t \tilde A_{s_{t-1}s_t}\prod_t \tilde b_{t s_t}$.
+Per segment we use a scaled recursion that has no clamping and gives an exact log-normaliser:
+
+$$
+M_t=\max_k\log\tilde b_{tk},\qquad \hat b_{tk}=\exp(\log\tilde b_{tk}-M_t)
+$$
+
+$$
+\begin{aligned}
+\hat{\boldsymbol\alpha}_1 &= \tilde{\boldsymbol\pi}\odot\hat{\mathbf b}_1/c_1, &
+\hat{\boldsymbol\alpha}_t &= (\hat{\boldsymbol\alpha}_{t-1}\tilde{\mathbf A})\odot\hat{\mathbf b}_t/c_t \quad(c_t\text{ normalises})\\
+\hat{\boldsymbol\beta}_T &= \mathbf 1, &
+\hat{\boldsymbol\beta}_t &= \tilde{\mathbf A}\,(\hat{\mathbf b}_{t+1}\odot\hat{\boldsymbol\beta}_{t+1})/c_{t+1}\\
+\gamma_{tk} &= \hat\alpha_{tk}\hat\beta_{tk}, &
+\xi_t(i,j) &= \hat\alpha_{t-1,i}\,\tilde A_{ij}\,\hat b_{tj}\,\hat\beta_{tj}/c_t\\
+\log\tilde Z_{\text{seg}} &= \textstyle\sum_t(\log c_t+M_t)
+\end{aligned}
+$$
+
+The Viterbi path computed on $(\log\tilde{\boldsymbol\pi},\log\tilde{\mathbf A},\log\tilde{\mathbf b})$ is exactly the **mode of $q(s_{1:T})$**.
+
+## 5. Update of q(θ): sufficient statistics and conjugate updates
+
+Let $w_t\in\{0,1\}$ mark observed samples (see §7). The sufficient statistics, summed over segments, are:
+
+$$
+\begin{aligned}
+g^{(1)}_k &= \textstyle\sum_{\text{seg}}\gamma_{\text{first},k}, &
+\Xi_{ij} &= \textstyle\sum_{t\,\text{not first}}\xi_t(i,j)\\
+N_k &= \textstyle\sum_t w_t\gamma_{tk}, &
+\mathbf S^{(1)}_k &= \textstyle\sum_t w_t\gamma_{tk}\mathbf y_t, \qquad
+\mathbf S^{(2)}_k = \textstyle\sum_t w_t\gamma_{tk}\mathbf y_t\mathbf y_t^\top
+\end{aligned}
+$$
+
+The updates are:
+
+$$
+\begin{aligned}
+\mathbf a &= \boldsymbol\alpha_0+\mathbf g^{(1)}, \qquad \mathbf B=\boldsymbol\beta_0+\boldsymbol\Xi\\
+\kappa_k &= \kappa_0+N_k,\qquad \nu_k=\nu_0+N_k,\qquad \mathbf m_k=(\kappa_0\mathbf m_0+\mathbf S^{(1)}_k)/\kappa_k\\
+\mathbf W_k^{-1} &= \mathbf W_0^{-1}+N_k\bar{\boldsymbol\Sigma}_k+\tfrac{\kappa_0N_k}{\kappa_0+N_k}(\bar{\mathbf y}_k-\mathbf m_0)(\bar{\mathbf y}_k-\mathbf m_0)^\top
+\end{aligned}
+$$
+
+where $\bar{\mathbf y}_k=\mathbf S^{(1)}_k/N_k$ and $\bar{\boldsymbol\Sigma}_k=\mathbf S^{(2)}_k/N_k-\bar{\mathbf y}_k\bar{\mathbf y}_k^\top$.
+The last line is algebraically equal to
+$\mathbf W_0^{-1}+\mathbf S^{(2)}_k+\kappa_0\mathbf m_0\mathbf m_0^\top-\kappa_k\mathbf m_k\mathbf m_k^\top$.
+We use the centred form because it is numerically safer.
+
+**Zero mean:** $\nu_k=\nu_0+N_k$ and $\mathbf W_k^{-1}=\mathbf W_0^{-1}+\mathbf S^{(2)}_k$.
+
+**States with no data.** When $N_k\to0$, the posterior returns to the prior. This needs no special handling.
+
+## 6. Free energy
+
+### 6.1 General form (valid at any point)
+
+$$
+F=\underbrace{\mathbf g^{(1)}\!\cdot\log\tilde{\boldsymbol\pi}+\textstyle\sum_{ij}\Xi_{ij}\log\tilde A_{ij}+\sum_k Q_k}_{\mathbb E_q[\log p(Y,s\mid\theta)]}
+\;+\;H[q(s)]\;-\;\mathrm{KL}[q(\theta)\,\|\,p(\theta)]
+$$
+
+where $Q_k=\sum_t w_t\gamma_{tk}\log\tilde b_{tk}$, computed from the sufficient statistics:
+
+$$
+Q_k=N_k\!\left(-\tfrac D2\log2\pi+\tfrac12\mathbb E\log|\boldsymbol\Lambda_k|\right)-\tfrac{DN_k}{2\kappa_k}
+-\tfrac{\nu_k}{2}\!\left[\mathrm{tr}(\mathbf W_k\mathbf S^{(2)}_k)-2\mathbf m_k^\top\mathbf W_k\mathbf S^{(1)}_k+N_k\mathbf m_k^\top\mathbf W_k\mathbf m_k\right].
+$$
+
+In the zero-mean case, $Q_k=N_k(\cdot)-\tfrac{\nu_k}{2}\mathrm{tr}(\mathbf W_k\mathbf S^{(2)}_k)$.
+
+**Entropy of q(s).** There are two equivalent ways to get it, and both have been verified:
+
+- $H=\sum_\text{seg}\log\tilde Z_\text{seg}-\big[\mathbf g^{(1)}\!\cdot\log\tilde{\boldsymbol\pi}+\sum\Xi\log\tilde{\mathbf A}+\sum_kQ_k\big]$,
+  where the bracket is evaluated with the $q(\theta)$ that **was used in the E-step**. The code stores this value at E-step time.
+- Chain entropy: $H=-\sum_\text{seg}\sum_k\gamma_{\text{first},k}\log\gamma_{\text{first},k}-\sum_t\sum_{ij}\xi_t(i,j)\log\frac{\xi_t(i,j)}{\gamma_{t-1,i}}$.
+
+### 6.2 Shortcut immediately after an E-step
+
+When $q(s)$ is optimal for the current $q(\theta)$:
+
+$$
+F=\sum_\text{seg}\log\tilde Z_\text{seg}-\mathrm{KL}[q(\theta)\,\|\,p(\theta)] .
+$$
+
+**This shortcut is not valid after an M-step.** Use 6.1 there, for example in tests that check F after every individual update.
+
+### 6.3 KL terms
+
+$$
+\mathrm{KL}=\mathrm{KL}_\text{Dir}(\mathbf a\|\boldsymbol\alpha_0)+\sum_i\mathrm{KL}_\text{Dir}(\mathbf B_{i\cdot}\|\boldsymbol\beta_{0,i\cdot})+\sum_k\mathrm{KL}_\text{NW}(k)
+$$
+
+$$
+\mathrm{KL}_\text{Dir}(\mathbf a\|\mathbf a_0)=\log\Gamma(\textstyle\sum a)-\sum\log\Gamma(a_j)-\log\Gamma(\sum a_0)+\sum\log\Gamma(a_{0j})+\sum_j(a_j-a_{0j})\big(\psi(a_j)-\psi(\sum a)\big)
+$$
+
+$$
+\mathrm{KL}_\mathcal{W}=\tfrac{\nu_0}{2}\big(\log|\mathbf W_0|-\log|\mathbf W|\big)+\tfrac{\nu}{2}\big(\mathrm{tr}(\mathbf W_0^{-1}\mathbf W)-D\big)
++\log\Gamma_D(\tfrac{\nu_0}{2})-\log\Gamma_D(\tfrac{\nu}{2})+\tfrac{\nu-\nu_0}{2}\psi_D(\tfrac{\nu}{2})
+$$
+
+$$
+\mathrm{KL}_\text{NW}=\mathrm{KL}_\mathcal{W}+\tfrac12\Big[D\big(\tfrac{\kappa_0}{\kappa}-\log\tfrac{\kappa_0}{\kappa}-1\big)+\kappa_0\nu(\mathbf m-\mathbf m_0)^\top\mathbf W(\mathbf m-\mathbf m_0)\Big]
+$$
+
+In the zero-mean case use $\mathrm{KL}_\mathcal{W}$ only.
+
+### 6.4 Exactness check for K = 1
+
+With $K=1$, the converged F equals the exact log evidence:
+
+$$
+\log p(Y)=-\tfrac{ND}{2}\log\pi+\log\Gamma_D(\tfrac{\nu}{2})-\log\Gamma_D(\tfrac{\nu_0}{2})+\tfrac{\nu_0}{2}\log|\mathbf W_0^{-1}|-\tfrac{\nu}{2}\log|\mathbf W^{-1}|+\tfrac D2\log\tfrac{\kappa_0}{\kappa}.
+$$
+
+Drop the last term in the zero-mean case.
+
+### 6.5 Comparing models with different K
+
+F bounds the evidence of one labelling of the states. When the posterior modes are well separated,
+$\log p(Y\mid K)\approx F+\log K!$ (Bishop 2006, §10.2.4). Add $\log K!$ whenever F is compared across K.
+
+## 7. Segments, missing samples and padding
+
+**Segments.** Sessions and trials are separate chains, and each starts from $\tilde{\boldsymbol\pi}$.
+
+**Bad samples are missing data, not segment breaks.** Set $\log\tilde b_{tk}=0$ and $w_t=0$.
+The chain carries on through the gap, so transitions inside the gap still add to $\Xi$, and $\log\tilde Z$ includes the gap.
+This is the exact variational treatment of observations that are missing at random. Splitting the chain at bad samples
+would add fake segment starts and distort $q(\boldsymbol\pi)$.
+
+**Padding** (used to give chunks equal length) must be **neutral**. A padded step uses the **identity transition matrix** and
+$\log\tilde b=0$, and contributes nothing to any statistic. Padding with $\log\tilde b=0$ and the normal $\tilde{\mathbf A}$
+is *not* neutral: because the rows of $\tilde{\mathbf A}$ sum to less than 1, it shifts $\gamma$ by about $10^{-2}$ in the check (§13 E).
+
+## 8. Stochastic variational inference
+
+### 8.1 Natural-parameter coordinates
+
+All global factors are written in coordinates that are **affine** in the sufficient statistics, so $\boldsymbol\eta=\boldsymbol\eta_0+\mathbf t$:
+
+| factor | coordinates $\boldsymbol\eta$ | prior $\boldsymbol\eta_0$ | statistic $\mathbf t$ |
+|---|---|---|---|
+| $q(\boldsymbol\pi)$ | $\mathbf a$ | $\boldsymbol\alpha_0$ | $\mathbf g^{(1)}$ |
+| $q(\mathbf A)$ | $\mathbf B$ | $\boldsymbol\beta_0$ | $\boldsymbol\Xi$ |
+| $q(\boldsymbol\mu_k,\boldsymbol\Lambda_k)$ | $\nu_k,\ \kappa_k,\ \kappa_k\mathbf m_k,\ \mathbf W_k^{-1}+\kappa_k\mathbf m_k\mathbf m_k^\top$ | $\nu_0,\ \kappa_0,\ \kappa_0\mathbf m_0,\ \mathbf W_0^{-1}+\kappa_0\mathbf m_0\mathbf m_0^\top$ | $N_k,\ N_k,\ \mathbf S^{(1)}_k,\ \mathbf S^{(2)}_k$ |
+| zero mean | $\nu_k,\ \mathbf W_k^{-1}$ | $\nu_0,\ \mathbf W_0^{-1}$ | $N_k,\ \mathbf S^{(2)}_k$ |
+
+**Implementation detail.** The code accumulates $\mathbf S^{(1)}_k,\mathbf S^{(2)}_k$ about $\mathbf m_0$, i.e. using $\mathbf y_t-\mathbf m_0$.
+In that shifted frame the prior coordinates become $\kappa_0\mathbf m_0\to\mathbf 0$ and $\mathbf W_0^{-1}+\kappa_0\mathbf m_0\mathbf m_0^\top\to\mathbf W_0^{-1}$.
+This is the same model, but it avoids cancellation in $\mathbf W^{-1}=\mathbf P-\kappa\mathbf m\mathbf m^\top$ when the data are not centred.
+
+Blending in any affine re-parameterisation of the natural parameters is the natural-gradient step (Hoffman et al. 2013).
+Blending $\mathbf m_k$, $\mathbf W_k$ or $\mathbf W_k^{-1}$ directly is **not**.
+To recover the usual parameters: $\mathbf m=(\kappa\mathbf m)/\kappa$ and $\mathbf W^{-1}=\mathbf P-\kappa\mathbf m\mathbf m^\top$, where $\mathbf P$ is the last coordinate.
+
+### 8.2 The update
+
+1. Cut every segment into **chunks**: intervals $[a_c,b_c]$ that tile the segment. Let $M$ be the total number of chunks.
+2. Each epoch, take a random permutation of the chunks and split it into mini-batches $\mathcal B$.
+3. For each mini-batch:
+
+$$
+\hat{\mathbf t}=\frac{M}{|\mathcal B|}\sum_{c\in\mathcal B}\mathbf t_c,\qquad
+\boldsymbol\eta\leftarrow(1-\rho_i)\boldsymbol\eta+\rho_i(\boldsymbol\eta_0+\hat{\mathbf t}),\qquad
+\rho_i=(i+\tau)^{-r},\ r\in(0.5,1],\ \tau\ge0.
+$$
+
+The scale factor $M/|\mathcal B|$ gives an **unbiased** estimate of *every* full-data statistic under uniform chunk sampling,
+including $\mathbf g^{(1)}$, even though chunks differ in length. A ratio of sample counts is not unbiased. Do not weight
+the sampling either: non-uniform sampling breaks unbiasedness unless importance weights are added.
+
+### 8.3 Chunk windows, buffers and which statistics each chunk owns
+
+- Forward–backward for chunk $c$ runs over the **window** $[a_c-L_\text{buf},\,b_c+L_\text{buf}]$, clipped to the segment.
+- **Initial distribution at the window start:**
+  - If the window starts at a true segment start, use $\tilde{\boldsymbol\pi}$.
+  - Otherwise use the stationary distribution of the row-normalised $\tilde{\mathbf A}$. This is an approximation, and the buffer absorbs it.
+- **Ownership.** Chunk $c$ contributes:
+  - $\gamma_t$ for $t\in[a_c,b_c]$ (masked by $w_t$);
+  - $\xi_t$, the transition $t-1\to t$, for $t\in[a_c,b_c]$ excluding the segment start;
+  - $\mathbf g^{(1)}$ only if $a_c$ is a segment start.
+- With these rules every quantity is counted exactly once.
+- A chunk that does not start at a segment start **needs a left buffer of at least 1**, otherwise the transition into $a_c$ is lost.
+- To process chunks in parallel, windows have equal length, with padding as in §7.
+
+### 8.4 Monitoring and the final free energy
+
+- During SVI, $\log\tilde Z$ per window includes the buffers and $q(s)$ is only approximately optimal, so the free energy reported per batch is a **diagnostic only**.
+- After SVI, run **one full E-step over whole segments**, without chunking. This gives the exact $F$ (via 6.2) for the final $q(\theta)$, together with the $\gamma$ to report.
+- Only this F is used to choose between restarts or values of K.
+- **Sanity check:** with chunks equal to whole segments, $\mathcal B$ equal to all chunks and $\rho=1$, the SVI update reduces exactly to the batch update. This is verified in §13 H.
+
+## 9. Decoding
+
+- The state probabilities are $\gamma$ from the final full E-step.
+- The Viterbi path is the mode of $q(s)$, as in §4.
+- Summary statistics are fractional occupancy, lifetimes, interval times and switching rate. They are computed from the Viterbi path or from thresholded $\gamma$, and should use the same definitions as osl-dynamics.
+
+## 10. Priors (defaults and rationale)
+
+**Data assumption.** Each channel is standardised per session (z-scored). A single streaming pass over the full dataset
+computes the pooled mean $\bar{\mathbf y}$ and the per-channel variances $\mathbf v$ ($\approx\mathbf 1$ after z-scoring).
+That pass is needed anyway to check the data.
+
+| parameter | default | rationale |
+|---|---|---|
+| $\nu_0$ | $D+2$ | The weakest Wishart prior for which $\mathbb E[\boldsymbol\Sigma_k]$ exists. Its weight is $D+2$ pseudo-samples, compared with $N_k\sim10^4$–$10^6$. |
+| $\mathbf W_0$ | $[(\nu_0-D-1)\,\boldsymbol\Sigma_0]^{-1}=\boldsymbol\Sigma_0^{-1}$, with $\boldsymbol\Sigma_0=\mathrm{diag}(\mathbf v)$ | Gives $\mathbb E_\text{prior}[\boldsymbol\Sigma_k]=\boldsymbol\Sigma_0$. This sets the scale only; the prior carries **no** correlation structure. It uses variance rather than range, so it is robust to artefacts. For zero-mean models, $\mathbf v$ is the per-channel mean square about zero, because there the state covariance is the second moment. |
+| $\mathbf m_0$ | $\bar{\mathbf y}$ ($\approx\mathbf 0$) | Centre of the data. |
+| $\kappa_0$ | $1$ | Prior covariance of $\boldsymbol\mu_k$ is $\boldsymbol\Sigma_k$, a unit-information prior. It has negligible effect on the posterior but sets the Occam penalty $\approx\frac D2\log(N_k/\kappa_0)$ per state in F. Check sensitivity when choosing K. |
+| $\boldsymbol\alpha_0$ | $\mathbf 1$ | Uniform. |
+| $\boldsymbol\beta_0$ | $\beta_0=1$ off the diagonal, $\beta_0+\delta$ on it | Sticky prior set by an expected lifetime $L$ in **samples** (lifetime in seconds × sampling rate). |
+
+**Choosing δ from the expected lifetime.** For a prior mean self-transition of $1-1/L$:
+
+$$
+\delta=\beta_0\big(K(L-1)-L\big)\quad\Rightarrow\quad \mathbb E_\text{prior}[A_{ii}]=1-1/L,
+$$
+
+which needs $L\ge K/(K-1)$.
+
+- Each row carries $\beta_0L(K-1)$ pseudo-counts. For example, $K=8$ and $L=25$ give 175, against $\sim T/K$ observed transitions per row.
+- So with large datasets the prior mainly matters for states that receive almost no data.
+- $L$ is the lifetime **at the prior mean**. By Jensen's inequality, $\mathbb E[1/(1-A_{ii})]\ge1/(1-\mathbb E[A_{ii}])$.
+
+**Empirical Bayes.** Only pooled first and second moments are taken from the data, so the double use of the data is negligible.
+The code reports prior pseudo-counts next to the data counts, so the user can see how strong the prior is.
+
+## 11. Initialisation
+
+**Principle.** Always initialise $q(s)$ first, as $\gamma$ and $\Xi$, then run an M-step to get $q(\theta)$. Never set $q(\theta)$ by hand.
+
+**Ways to get the initial $q(s)$:**
+
+1. `'random'` (the default; follows HMM-MAR's default initialisation):
+   - For each segment, sample a Markov state path with transition matrix $\mathbf P\propto(d-1)\mathbf I+\mathbf 1$ (rows normalised), so $p(\text{stay})=d/(d+K-1)$.
+   - $d$ is `S.initdiag`, which defaults to $\min(\operatorname{median}_i T_i/10,\,500)$, as in HMM-MAR.
+   - The first state is drawn uniformly.
+   - Add $10^{-4}\times$uniform noise to the one-hot path and renormalise it to get $\gamma$.
+   - Approximate $\Xi$ by $\sum_t\gamma_{t-1}^\top\gamma_t$.
+2. User-supplied $\gamma$, for example from an earlier fit or a group model.
+3. *(Possible later additions)* k-means on samples when means are learned, or on sliding-window covariances for zero-mean models.
+
+**Restarts** (as in HMM-MAR). Run $n_\text{init}=5$ short fits of 10 full VB cycles each, and keep the one with the highest F.
+Unlike HMM-MAR, our F is the correct bound (§6), the RNG is local, and the extra option of initialising with a smaller K is not implemented.
+
+- All restarts must compute F on the **same data**: the same subset of sessions when the dataset is large.
+- Optionally, run `best_of` complete fits and keep the one with the highest final exact F (§8.4).
+
+**Moving from a subset to SVI on all data.** Initialise $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
+The subset statistics are rescaled to full-data size, so the starting posterior has the right concentration.
+This avoids HMM-MAR's over-counting, where each subject in a group receives the whole group's statistics.
+
+**Reproducibility.** Use a local `RandStream` seeded from options. The global RNG is never changed.
+
+## 12. Numerical implementation notes
+
+- **Emissions:** compute $\mathbf W_k=\mathbf C_k^\top\mathbf C_k$ by Cholesky. Then $(\mathbf y-\mathbf m)^\top\mathbf W(\mathbf y-\mathbf m)=\|(\mathbf Y-\mathbf m^\top)\mathbf C_k^\top\|^2$ row-wise, at cost $O(TKD^2)$, vectorised over time.
+- **Log-determinants** use Cholesky. Never call `det` or `inv` inside KL terms; use solves.
+- **Forward–backward:** use the scaled recursion of §4 with subtraction of the per-time maximum. There is no clamping and $\log\tilde Z$ is exact. Run it across chunks in parallel, one $K\times n_\text{chunks}$ operation per time step.
+- **Precision matrices:** symmetrise every $\mathbf W_k^{-1}$. If Cholesky fails, **raise an error** instead of adding silent jitter.
+- **Dead states:** report $N_k$ and leave them alone; there is no forced pruning in version 1.
+- **MATLAB compatibility:** the code must run on R2020b, the oldest release in CI.
+
+## 13. Verification (`hmm_maths_check.m`, MATLAB R2026b)
+
+| check | result |
+|---|---|
+| A. $\mathbb E\log|\boldsymbol\Lambda|$, $\mathrm{KL}_\mathcal W$, $\mathrm{KL}_\text{NW}$, $\mathrm{KL}_\text{Dir}$, $\mathbb E\log\pi_k$, $\mathbb E_q\log\mathcal N$ against Monte Carlo ($2\times10^5$ draws) | all within 1.4 standard errors |
+| B. Forward–backward against brute-force enumeration ($K=3$, $T=6$) | $\log\tilde Z$, $\gamma$, $\Xi$ and $H$ agree to $10^{-14}$ |
+| B. Identity 6.2 against explicit $\mathbb E[\text{score}]+H-\mathrm{KL}$ | agree to $4\times10^{-14}$ |
+| B. $\mathbb E_{q(\theta)}[\log p(Y,s\mid\theta)]=\text{score}(s)$ by Monte Carlo | 0.9 standard errors |
+| C. $K=1$: F equals exact log evidence (with mean and zero-mean) | agree to $10^{-13}$ |
+| D. Batch VB: F never decreases after **every** E- and M-step (60 iterations, with mean and zero-mean) | smallest step $-2.5\times10^{-11}$ on $|F|\approx2\times10^4$, i.e. round-off |
+| E. Padding with identity transitions is neutral; naive padding is not | $3\times10^{-16}$ against $10^{-2}$ |
+| F. Chunked forward–backward with buffers against full forward–backward | buffer of 0: $\gamma$ off by $4\times10^{-2}$; buffer ≥ 10: $10^{-14}$ (well-separated simulated states; real data will need longer buffers, which a test will set) |
+| G. $\delta$ from lifetime $L$ | prior $\mathbb E[A_{ii}]=1-1/L$ exactly |
+| H. SVI with $\rho=1$, full batch, chunks equal to segments, against the batch update | $4.5\times10^{-13}$ |
+| H. Bias of $M/|\mathcal B|$ scaling (4000 random batches of segments with unequal lengths) | within Monte Carlo noise |
+
+These checks become the core of `tests/test_spm_hmm_*.m`.
+
+## 14. Problems found in existing SPM helpers (do not reuse)
+
+- **`spm_lg_gamma`** computes $\sum_\alpha\log\Gamma(b+\tfrac{\alpha-1}{2})$. The multivariate gamma is $\sum_\alpha\log\Gamma(b-\tfrac{\alpha-1}{2})$, which is what the Box & Tiao reference in its header gives.
+  For example, `spm_lg_gamma(3,2.5)` returns 3.896, while $\log\Gamma_3(2.5)=1.881$.
+- **`spm_kl_wishart`** inherits that error. It also uses $\mathbb E_p\log|\boldsymbol\Lambda|$ in the cross-entropy term, where $\mathbb E_q\log|\boldsymbol\Lambda|$ is needed.
+  In the check it returns 15.94 against a true 18.54. Correcting both errors reproduces the true value exactly.
+- **Who is affected:** `spm_mix` (free energy), `spm_mar` (free energy, used to select model order), `spm_mlm_bayes`.
+- **Plan:** `toolbox/HMM` uses its own private, tested helpers. The shared helpers should be fixed in a separate pull request, because the fix changes free-energy values in the functions above.
+
+## 15. Where each part is implemented
+
+| section | function |
+|---|---|
+| §1, §10 priors | `spm_hmm_set_priors` |
+| §3 expected log emission | `spm_hmm_expected_loglik` |
+| §4 forward–backward | `spm_hmm_forward_backward` |
+| §4–5 E-step: $q(s)$, sufficient statistics, $H$ | `spm_hmm_infer_states` |
+| §5, §8.1–8.2 M-step, batch or stochastic | `spm_hmm_update_params` (with `private/natural_to_posterior`) |
+| §6.3 KL terms | `spm_hmm_kl_divergence` |
+| §6.1 general F | `spm_hmm_free_energy` |
+| §6.2, §6.5, §11 fitting loop, restarts, $F+\log K!$ | `spm_hmm` |
+| simulation | `spm_hmm_simulate` |
+| tests | `tests/test_spm_hmm.m` |
+
+## 16. References
+
+- Beal, M. J. (2003). *Variational Algorithms for Approximate Bayesian Inference*. PhD thesis, UCL, ch. 3 (VB for HMMs).
+- MacKay, D. J. C. (1997). Ensemble learning for hidden Markov models. Technical report, Cambridge.
+- Bishop, C. M. (2006). *Pattern Recognition and Machine Learning*, §10.2 (VB Gaussian mixtures, Normal–Wishart).
+- Hoffman, M. D., Blei, D. M., Wang, C., Paisley, J. (2013). Stochastic variational inference. *JMLR* 14.
+- Foti, N., Xu, J., Laird, D., Fox, E. (2014). Stochastic variational inference for hidden Markov models. *NeurIPS*.
+- Johnson, M. J., Willsky, A. S. (2014). Stochastic variational inference for Bayesian time series models. *ICML*.
+- Rabiner, L. R. (1989). A tutorial on hidden Markov models. *Proc. IEEE* 77.
+- osl-dynamics (HMM inference and summary-statistic conventions).
