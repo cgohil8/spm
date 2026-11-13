@@ -287,6 +287,95 @@ function test_stochastic_update_with_unit_step_is_batch_update(testCase)
     testCase.verifyEqual(q3.eta.km,0.7*q.eta.km + 0.3*q1.eta.km,'RelTol',1e-12);
 end
 
+% -------------------------------------------------------------------------
+% Stochastic inference: chunks, buffers, natural-gradient updates
+% -------------------------------------------------------------------------
+function test_chunks_tile_segments(testCase)
+    T  = [1000 37 2501];
+    ch = spm_hmm_make_chunks(T,300,20);
+    for i = 1:numel(T)
+        c = ch(ch(:,1) == i,:);
+        testCase.verifyEqual(c(1,2),1);
+        testCase.verifyEqual(c(end,3),T(i));
+        testCase.verifyEqual(c(2:end,2),c(1:end-1,3) + 1);
+        testCase.verifyLessThanOrEqual(c(:,3) - c(:,2) + 1,300*ones(size(c,1),1));
+        testCase.verifyEqual(c(:,4),max(1,c(:,2) - 20));
+        testCase.verifyEqual(c(:,5),min(T(i),c(:,3) + 20));
+    end
+end
+
+function test_chunked_e_step_equals_full_when_chunks_are_segments(testCase)
+    [Y,~,prior,q] = simulated_problem(false);
+    Y{1}(100:120,:) = NaN;
+    T  = cellfun(@(y) size(y,1),Y);
+    st0 = spm_hmm_infer_states(Y,q,prior);
+    st1 = spm_hmm_infer_states_chunked(Y,spm_hmm_make_chunks(T,Inf,1),q,prior);
+    verify_stats_equal(testCase,st1,st0,1e-10);
+    testCase.verifyEqual(st1.logZ,st0.logZ,'RelTol',1e-12);
+end
+
+function test_chunk_padding_is_neutral(testCase)
+    % chunks of different lengths processed together or one at a time
+    [Y,~,prior,q] = simulated_problem(false);
+    ch = spm_hmm_make_chunks(cellfun(@(y) size(y,1),Y),333,25);
+    [st,g] = spm_hmm_infer_states_chunked(Y,ch,q,prior);
+    sts = empty_stats(q.K,q.D); gs = cell(size(ch,1),1);
+    for c = 1:size(ch,1)
+        [s1,g1] = spm_hmm_infer_states_chunked(Y,ch(c,:),q,prior);
+        sts = add_stats(sts,s1); gs(c) = g1;
+    end
+    verify_stats_equal(testCase,st,sts,1e-10);
+    testCase.verifyEqual(cat(1,g{:}),cat(1,gs{:}),'AbsTol',1e-12);
+end
+
+function test_buffered_chunk_statistics_match_full_data(testCase)
+    % with a long enough buffer, the owned statistics of all chunks add up
+    % to the full-data statistics (each sample and transition counted once)
+    [Y,~,prior] = simulated_problem(false);
+    HMM = spm_hmm(Y,struct('K',3,'verbose',false,'ninit',2));
+    q   = HMM.q;
+    st0 = spm_hmm_infer_states(Y,q,prior);
+    T   = cellfun(@(y) size(y,1),Y);
+    st1 = spm_hmm_infer_states_chunked(Y,spm_hmm_make_chunks(T,250,50),q,prior);
+    verify_stats_equal(testCase,st1,st0,1e-8);
+    testCase.verifyEqual(st1.T,st0.T);
+end
+
+function test_stochastic_full_batch_unit_step_is_batch_vb(testCase)
+    % one chunk per segment, all chunks in every batch and rho = 1: every
+    % update is an exact VB update, so F cannot decrease
+    Y = simulated_problem(false);
+    S = struct('K',3,'verbose',false,'ninit',1,'inference','stochastic', ...
+        'svi',struct('chunklength',Inf,'batchsize',Inf,'forget',0,'nepochs',8,'Fevery',1));
+    HMM = spm_hmm(Y,S);
+    testCase.verifyEqual(HMM.rho,ones(1,8));
+    testCase.verifyGreaterThan(min(diff(HMM.Fhist)),-1e-9*abs(HMM.F));
+end
+
+function test_stochastic_inference_approaches_batch(testCase)
+    [Y,s] = simulated_problem(false);
+    Hb = spm_hmm(Y,struct('K',3,'verbose',false));
+    Hs = spm_hmm(Y,struct('K',3,'verbose',false,'inference','stochastic', ...
+        'svi',struct('chunklength',250,'batchsize',4,'nepochs',20)));
+    testCase.verifyLessThan(abs(Hs.F - Hb.F),1e-4*abs(Hb.F));
+    testCase.verifyGreaterThan(state_accuracy(Hs.gamma,s),0.95);
+    rho = (1:numel(Hs.rho)) + 1;
+    testCase.verifyEqual(Hs.rho,rho.^(-0.7),'RelTol',1e-12);
+end
+
+function test_stochastic_reproducible_and_global_stream_untouched(testCase)
+    Y  = simulated_problem(false);
+    Y{2}(5:9,:) = NaN;
+    S  = struct('K',3,'verbose',false,'ninit',2,'seed',4,'inference','stochastic', ...
+        'svi',struct('chunklength',400,'batchsize',3,'nepochs',3));
+    s0 = rng;
+    H1 = spm_hmm(Y,S);
+    testCase.verifyEqual(rng,s0);
+    H2 = spm_hmm(Y,S);
+    testCase.verifyEqual(H1.F,H2.F);
+    testCase.verifyTrue(isfinite(H1.F));
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
@@ -306,6 +395,24 @@ function verify_mc(testCase,samples,expected)
 % Monte Carlo mean must lie within 4 standard errors of the expectation
 se = std(samples)/sqrt(numel(samples));
 testCase.verifyLessThan(abs(mean(samples) - expected),4*se + 1e-12);
+end
+
+function verify_stats_equal(testCase,a,b,tol)
+testCase.verifyEqual(a.N,b.N,'RelTol',tol);
+testCase.verifyEqual(a.S1,b.S1,'AbsTol',tol*max(abs(b.S1(:))));
+testCase.verifyEqual(a.S2,b.S2,'AbsTol',tol*max(abs(b.S2(:))));
+testCase.verifyEqual(a.Xi,b.Xi,'AbsTol',tol*max(b.Xi(:)));
+testCase.verifyEqual(a.g1,b.g1,'AbsTol',1e-10);
+end
+
+function st = empty_stats(K,D)
+st = struct('N',zeros(1,K),'S1',zeros(D,K),'S2',zeros(D,D,K),'Xi',zeros(K),'g1',zeros(1,K),'T',0);
+end
+
+function st = add_stats(st,s)
+for f = {'N','S1','S2','Xi','g1','T'}
+    st.(f{1}) = st.(f{1}) + s.(f{1});
+end
 end
 
 function [q,prior] = random_posterior(D,K,zm)

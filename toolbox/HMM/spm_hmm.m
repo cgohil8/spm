@@ -28,6 +28,20 @@ function HMM = spm_hmm(Y,S)
 %   .tol       convergence: change in F < tol*|F|                   [1e-7]
 %   .seed      random seed (the global random stream is not used)      [0]
 %   .verbose   print progress                                       [true]
+%   .inference 'batch' or 'stochastic'                             ['batch']
+%   .svi       stochastic variational inference options:
+%     .chunklength  samples per chunk                                 [1000]
+%     .buffer       samples either side of a chunk (>= 1)              [100]
+%     .batchsize    chunks per mini-batch                               [32]
+%     .nepochs      passes through the data                             [20]
+%     .delay        step size rho_i = (i + delay)^(-forget)              [1]
+%     .forget       forgetting rate, in (0.5,1]                        [0.7]
+%     .initchunks   chunks used for the batch initialisations          [64]
+%     .Fevery       exact F every Fevery epochs (0: only at the end)     [0]
+%   Stochastic inference initialises with batch VB on a random subset of
+%   chunks (S.ninit restarts of S.initcyc cycles), then updates natural
+%   parameters with mini-batches of chunks; the final F and gamma come
+%   from one exact E-step over the whole segments. See HMM_maths.md, 8.
 %
 % HMM        - fitted model:
 %   .K, .D, .zeromean
@@ -40,8 +54,11 @@ function HMM = spm_hmm(Y,S)
 %   .F         variational free energy (lower bound on log evidence)
 %   .Fperm     F + log(K!): approximation to the log evidence that accounts
 %              for label permutations; use this to compare different K
-%   .Fhist     F after every E-step of the final run
-%   .Finit     final F of each initialisation
+%   .Fhist     batch: F after every E-step of the final run
+%              stochastic: exact F after every S.svi.Fevery epochs
+%   .Finit     final F of each initialisation (on the initialisation
+%              subset for stochastic inference)
+%   .rho       stochastic: step size of every mini-batch update
 %
 % The generative model, the variational updates and the free energy are
 % derived in toolbox/HMM/doc/HMM_maths.md.
@@ -60,24 +77,34 @@ Y = prepare_segments(Y,S);
 stream = RandStream('mt19937ar','Seed',S.seed);
 prior  = spm_hmm_set_priors(Y,S);
 
-%-Initialisations
-%--------------------------------------------------------------------------
-best = struct('F',-Inf,'q',[]);
-Finit = zeros(1,S.ninit);
-for r = 1:S.ninit
-    gamma = initial_state_probs(Y,S,prior,stream);
-    q     = spm_hmm_update_params(sufficient_stats_from_probs(Y,gamma,prior),prior);
-    [q,F] = run_variational_bayes(Y,q,prior,S.initcyc,S.tol,false);
-    Finit(r) = F(end);
-    if S.verbose
-        fprintf('spm_hmm: initialisation %d/%d, F = %.6g\n',r,S.ninit,F(end));
+if strcmpi(S.inference,'stochastic')
+    %-Stochastic variational inference
+    %----------------------------------------------------------------------
+    [q,Fhist,Finit,rho] = fit_stochastic(Y,S,prior,stream);
+    [st,~,gamma] = spm_hmm_infer_states(Y,q,prior);
+    KL    = spm_hmm_kl_divergence(q,prior);
+    Fhist = [Fhist st.logZ - KL];
+else
+    %-Initialisations
+    %----------------------------------------------------------------------
+    best  = struct('F',-Inf,'q',[]);
+    Finit = zeros(1,S.ninit);
+    for r = 1:S.ninit
+        gamma = initial_state_probs(Y,S,prior,stream);
+        q     = spm_hmm_update_params(sufficient_stats_from_probs(Y,gamma,prior),prior);
+        [q,F] = run_variational_bayes(Y,q,prior,S.initcyc,S.tol,false);
+        Finit(r) = F(end);
+        if S.verbose
+            fprintf('spm_hmm: initialisation %d/%d, F = %.6g\n',r,S.ninit,F(end));
+        end
+        if F(end) > best.F, best.F = F(end); best.q = q; end
     end
-    if F(end) > best.F, best.F = F(end); best.q = q; end
-end
 
-%-Variational Bayes
-%--------------------------------------------------------------------------
-[q,Fhist,st,gamma,KL] = run_variational_bayes(Y,best.q,prior,S.maxcyc,S.tol,S.verbose);
+    %-Variational Bayes
+    %----------------------------------------------------------------------
+    [q,Fhist,st,gamma,KL] = run_variational_bayes(Y,best.q,prior,S.maxcyc,S.tol,S.verbose);
+    rho = [];
+end
 
 %-Output
 %--------------------------------------------------------------------------
@@ -94,6 +121,7 @@ HMM.Fperm    = HMM.F + gammaln(S.K + 1);
 HMM.Fhist    = Fhist;
 HMM.Finit    = Finit;
 HMM.KL       = KL;
+HMM.rho      = rho;
 HMM.options  = S;
 
 
@@ -131,7 +159,7 @@ F = F(1:it);
 function S = set_defaults(S)
 def = struct('T',[],'zeromean',false,'lifetime',10,'prior',struct(),...
     'init','random','initdiag',[],'ninit',5,'initcyc',10,'maxcyc',500,'tol',1e-7,...
-    'seed',0,'verbose',true);
+    'seed',0,'verbose',true,'inference','batch','svi',struct());
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}) || (isempty(S.(fn{i})) && ~isstruct(def.(fn{i})))
@@ -142,6 +170,20 @@ if ~isscalar(S.K) || S.K < 1 || S.K ~= round(S.K)
     error('spm_hmm:invalidInput','S.K must be a positive integer.');
 end
 S.zeromean = logical(S.zeromean);
+if ~any(strcmpi(S.inference,{'batch','stochastic'}))
+    error('spm_hmm:invalidInput','S.inference must be ''batch'' or ''stochastic''.');
+end
+svi = struct('chunklength',1000,'buffer',100,'batchsize',32,'nepochs',20,...
+    'delay',1,'forget',0.7,'initchunks',64,'Fevery',0);
+fn = fieldnames(svi);
+for i = 1:numel(fn)
+    if ~isfield(S.svi,fn{i}) || isempty(S.svi.(fn{i}))
+        S.svi.(fn{i}) = svi.(fn{i});
+    end
+end
+if S.svi.buffer < 1
+    error('spm_hmm:invalidInput','S.svi.buffer must be at least 1.');
+end
 if S.ninit < 1, S.ninit = 1; end
 if iscell(S.init), S.ninit = 1; end
 

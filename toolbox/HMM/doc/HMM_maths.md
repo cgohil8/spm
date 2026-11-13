@@ -266,7 +266,24 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 - A chunk that does not start at a segment start **needs a left buffer of at least 1**, otherwise the transition into $a_c$ is lost.
 - To process chunks in parallel, windows have equal length, with padding as in §7.
 
-### 8.4 Monitoring and the final free energy
+### 8.4 Defaults and the initialisation for stochastic inference
+
+| option (`S.svi.`) | default | note |
+|---|---|---|
+| `chunklength` | 1000 | interior samples per chunk; segments are split into near-equal chunks |
+| `buffer` | 100 | samples either side; must be ≥ 1 |
+| `batchsize` | 32 | chunks per mini-batch |
+| `nepochs` | 20 | random partition of the chunks into mini-batches every epoch |
+| `delay`, `forget` | 1, 0.7 | $\rho_i=(i+\text{delay})^{-\text{forget}}$ |
+| `initchunks` | 64 | chunks used for the batch initialisation |
+| `Fevery` | 0 | exact F every so many epochs (costs one full E-step) |
+
+**Initialisation.**
+1. Run batch VB (§11) on `initchunks` random chunks, treating each chunk as a separate segment and using the **full-data prior**.
+2. Run one E-step on that subset, then set $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
+3. Scale $\mathbf g^{(1)}$ first by (number of segments)/$M$, because every subset chunk counts as a segment start but the data contain only that many true starts.
+
+### 8.5 Monitoring and the final free energy
 
 - During SVI, $\log\tilde Z$ per window includes the buffers and $q(s)$ is only approximately optimal, so the free energy reported per batch is a **diagnostic only**.
 - After SVI, run **one full E-step over whole segments**, without chunking. This gives the exact $F$ (via 6.2) for the final $q(\theta)$, together with the $\gamma$ to report.
@@ -328,7 +345,7 @@ The code reports prior pseudo-counts next to the data counts, so the user can se
 Unlike HMM-MAR, our F is the correct bound (§6), the RNG is local, and the extra option of initialising with a smaller K is not implemented.
 
 - All restarts must compute F on the **same data**: the same subset of sessions when the dataset is large.
-- Optionally, run `best_of` complete fits and keep the one with the highest final exact F (§8.4).
+- *(Not yet implemented)* run `best_of` complete fits and keep the one with the highest final exact F (§8.5).
 
 **Moving from a subset to SVI on all data.** Initialise $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
 The subset statistics are rescaled to full-data size, so the starting posterior has the right concentration.
@@ -381,6 +398,8 @@ These checks become the core of `tests/test_spm_hmm_*.m`.
 | §4 forward–backward | `spm_hmm_forward_backward` |
 | §4–5 E-step: $q(s)$, sufficient statistics, $H$ | `spm_hmm_infer_states` |
 | §5, §8.1–8.2 M-step, batch or stochastic | `spm_hmm_update_params` (with `private/natural_to_posterior`) |
+| §7, §8.3 chunks, buffers, ownership, padding | `spm_hmm_make_chunks`, `spm_hmm_infer_states_chunked` |
+| §8.2, §8.4 stochastic loop and initialisation | `private/fit_stochastic` |
 | §6.3 KL terms | `spm_hmm_kl_divergence` |
 | §6.1 general F | `spm_hmm_free_energy` |
 | §6.2, §6.5, §11 fitting loop, restarts, $F+\log K!$ | `spm_hmm` |
