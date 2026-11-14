@@ -70,6 +70,7 @@ col = state_colours(K);
 %--------------------------------------------------------------------------
 F  = figure('Color','w','Name','State time courses');
 ns = numel(S.segments);
+axs = gobjects(ns,1);
 for j = 1:ns
     i  = S.segments(j);
     g  = states{i};
@@ -81,14 +82,20 @@ for j = 1:ns
     g  = g(idx,:);
     if ~isempty(S.missing), g(S.missing{i}(idx),:) = NaN; end
     if isempty(S.fs), t = idx; else, t = (idx - 1)/S.fs; end
-    ax = subplot(ns,1,j);
+    ax = subplot(ns,1,j); axs(j) = ax;
     h  = area(ax,t,g,'EdgeColor','none');
     for k = 1:K, set(h(k),'FaceColor',col(k,:),'Tag','state'); end
     if t(end) > t(1), xlim(ax,[t(1) t(end)]); end
     ylim(ax,[0 1]);
-    ylabel(ax,sprintf('Segment %d',i));
+    if ns > 4                                           % short labels
+        set(ax,'YTick',[]); ylabel(ax,sprintf('%d',i),'Rotation',0,...
+            'HorizontalAlignment','right','VerticalAlignment','middle');
+    else
+        ylabel(ax,sprintf('Segment %d',i));
+    end
     box(ax,'off');
 end
+set(axs(1:end-1),'XTickLabel',[]);
 if isempty(S.fs), xlabel(ax,'Sample'); else, xlabel(ax,'Time (s)'); end
 
 %-Colour bar labelled with the state numbers
@@ -99,5 +106,8 @@ caxis(ax,[0 K]); %#ok<CAXIS> clim needs R2022a
 set(cb,'Ticks',(1:K) - 0.5,'TickLabels',arrayfun(@num2str,1:K,'UniformOutput',false));
 cb.Label.String = 'State';
 w = get(ax,'Position');                                 % equal panel widths
-for a = findobj(F,'Type','axes')', p = get(a,'Position'); set(a,'Position',[p(1) p(2) w(3) p(4)]); end
+for a = axs', p = get(a,'Position'); set(a,'Position',[p(1) p(2) w(3) p(4)]); end
+top = get(axs(1),'Position');                           % bar spans all panels
+c   = get(cb,'Position');
+set(cb,'Position',[c(1) w(2) c(3) top(2) + top(4) - w(2)]);
 if ~isempty(S.title), sgtitle(F,S.title); end

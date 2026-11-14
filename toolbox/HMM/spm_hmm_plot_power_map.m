@@ -82,7 +82,11 @@ for m = 1:numel(S.maps)
         patch(ax,'Faces',fc(views{p,1},:),'Vertices',vtx,'FaceVertexCData',v,...
             'FaceColor','interp','EdgeColor','none','FaceLighting','gouraud',...
             'AmbientStrength',0.4,'DiffuseStrength',0.7,'SpecularStrength',0.1);
-        axis(ax,'equal','off'); view(ax,views{p,2},0); camlight(ax,'headlight');
+        u = vtx(unique(fc(views{p,1},:)),:);           % limits before camlight,
+        axis(ax,'equal','off'); view(ax,views{p,2},0);  % which would extend them
+        set(ax,'XLim',[min(u(:,1)) max(u(:,1))],'YLim',[min(u(:,2)) max(u(:,2))],...
+            'ZLim',[min(u(:,3)) max(u(:,3))]);
+        camlight(ax,'headlight');
         set(ax,'Color',[0.7 0.7 0.7]); colormap(ax,cold_hot(256));
         caxis(ax,cl); %#ok<CAXIS> clim needs R2022a
         title(ax,views{p,3});
