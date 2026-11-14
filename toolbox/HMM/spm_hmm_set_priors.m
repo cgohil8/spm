@@ -30,7 +30,7 @@ function prior = spm_hmm_set_priors(Y,S)
 % The per-channel scale of the data (standard deviation, or root mean
 % square for zero-mean models) must lie between 1e-100 and 1e100.
 %
-% See HMM_maths.md, section 10.
+% See toolbox/HMM/README.md (Priors).
 %__________________________________________________________________________
 
 % Chetan Gohil

@@ -174,7 +174,7 @@ hmm.tag      = 'hmm';
 hmm.name     = 'HMM';
 hmm.val      = {D, channels, K, lifetime, zeromean, embedding, inference, bestof, seed, prefix};
 hmm.help     = {['Variational Bayesian hidden Markov model with Gaussian '...
-    'observations (see toolbox/HMM/doc/HMM_maths.md).']};
+    'observations (see toolbox/HMM/README.md).']};
 hmm.prog     = @run_hmm;
 hmm.vout     = @vout_hmm;
 hmm.modality = {'EEG'};

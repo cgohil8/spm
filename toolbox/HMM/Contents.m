@@ -2,7 +2,7 @@
 %
 % Variational Bayesian hidden Markov model with multivariate Gaussian
 % observations (Normal-Wishart priors; optional zero-mean states).
-% Maths: toolbox/HMM/doc/HMM_maths.md
+% Overview: toolbox/HMM/README.md
 % Example pipelines: toolbox/HMM/examples (README.md)
 %
 %   spm_hmm                  - fit the model (main function)

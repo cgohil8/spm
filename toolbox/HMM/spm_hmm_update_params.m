@@ -22,7 +22,7 @@ function q = spm_hmm_update_params(st,prior,q,rho,c)
 %   Elogdet = E[log|Lambda_k|], R = chol(Winv), logdetW
 %
 % The update is eta = (1-rho)*eta_old + rho*(eta_0 + c*t), which for rho=1
-% and c=1 is the exact conjugate (batch) update. See HMM_maths.md, 5 and 8.
+% and c=1 is the exact conjugate (batch) update.
 %__________________________________________________________________________
 
 % Chetan Gohil

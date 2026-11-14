@@ -62,7 +62,7 @@ function HMM = spm_hmm(Y,S)
 %   Stochastic inference initialises with batch VB on a random subset of
 %   chunks (S.ninit restarts of S.initcyc cycles), then updates natural
 %   parameters with mini-batches of chunks; the final F and gamma come
-%   from one exact E-step over the whole segments. See HMM_maths.md, 8.
+%   from one exact E-step over the whole segments.
 %
 % HMM        - fitted model:
 %   .K, .D, .zeromean
@@ -83,8 +83,8 @@ function HMM = spm_hmm(Y,S)
 %   .rho       stochastic: step size of every mini-batch update
 %   .Fbestof   final F of each complete fit (when S.bestof > 1)
 %
-% The generative model, the variational updates and the free energy are
-% derived in toolbox/HMM/doc/HMM_maths.md.
+% The model and its variational inference are summarised in
+% toolbox/HMM/README.md.
 %__________________________________________________________________________
 
 % Chetan Gohil

@@ -16,7 +16,6 @@ function [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream)
 %       eta   = (1 - rho_i)*eta + rho_i*(eta_0 + t_hat)
 %       rho_i = (i + delay)^(-forget)
 %    M is the number of chunks.
-% See HMM_maths.md, sections 8 and 11.
 %__________________________________________________________________________
 
 % Chetan Gohil

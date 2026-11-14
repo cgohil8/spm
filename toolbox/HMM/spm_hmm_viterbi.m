@@ -8,7 +8,7 @@ function [path,score] = spm_hmm_viterbi(lpi,lA,lb)
 %
 % path   - [T x 1] state sequence maximising
 %          lpi(s_1) + sum_t lA(s_t-1,s_t) + sum_t lb(t,s_t),
-%          which is the mode of q(s_1:T) (HMM_maths.md, section 4)
+%          which is the mode of q(s_1:T)
 % score  - the maximised value
 %__________________________________________________________________________
 

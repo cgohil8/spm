@@ -1,7 +1,7 @@
 classdef test_spm_hmm < matlab.unittest.TestCase
 % Unit tests for the variational Bayesian HMM (toolbox/HMM)
 %
-% Each test checks a result derived in toolbox/HMM/doc/HMM_maths.md against
+% Each test checks a result of the model (toolbox/HMM/README.md) against
 % an independent computation: Monte Carlo, brute-force enumeration, or a
 % closed-form log evidence.
 %__________________________________________________________________________

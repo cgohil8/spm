@@ -24,7 +24,6 @@ function [st,gamma] = spm_hmm_infer_states_chunked(Y,chunks,q,prior,method)
 % runs window by window; the MATLAB code runs all windows together, with
 % windows shorter than the longest padded with identity transitions and no
 % observations.
-% See HMM_maths.md, sections 7 and 8.3.
 %__________________________________________________________________________
 
 % Chetan Gohil

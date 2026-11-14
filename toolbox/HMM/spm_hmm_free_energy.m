@@ -11,8 +11,8 @@ function [F,E] = spm_hmm_free_energy(st,H,q,prior)
 % F      - E_q[log p(Y,s|theta)] + H[q(s)] - KL[q(theta)||p(theta)]
 % E      - E_q[log p(Y,s|theta)]
 %
-% This is the general form (HMM_maths.md, section 6.1). Immediately after
-% an E-step with the same q it equals st.logZ - spm_hmm_kl_divergence(q,prior).
+% This is the general form. Immediately after an E-step with the same q
+% it equals st.logZ - spm_hmm_kl_divergence(q,prior).
 %__________________________________________________________________________
 
 % Chetan Gohil

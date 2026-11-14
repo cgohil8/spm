@@ -8,8 +8,6 @@ function [KL,parts] = spm_hmm_kl_divergence(q,prior)
 % KL     - KL[q(pi)||p(pi)] + sum_i KL[q(A_i.)||p(A_i.)]
 %          + sum_k KL[q(mu_k,Lambda_k)||p(mu_k,Lambda_k)]
 % parts  - .pi (scalar), .A ([K x 1], one per row), .obs ([1 x K])
-%
-% See HMM_maths.md, section 6.3.
 %__________________________________________________________________________
 
 % Chetan Gohil

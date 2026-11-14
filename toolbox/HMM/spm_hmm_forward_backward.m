@@ -17,7 +17,6 @@ function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb,method)
 %          log sum_s exp(lpi(s_1) + sum_t lA(s_t-1,s_t) + sum_t lb(t,s_t))
 %
 % Scaled recursion with per-sample max subtraction.
-% See toolbox/HMM/doc/HMM_maths.md, section 4.
 %__________________________________________________________________________
 
 % Chetan Gohil
