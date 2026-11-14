@@ -3,6 +3,7 @@
 % Variational Bayesian hidden Markov model with multivariate Gaussian
 % observations (Normal-Wishart priors; optional zero-mean states).
 % Maths: toolbox/HMM/doc/HMM_maths.md
+% Example pipelines: toolbox/HMM/examples (README.md)
 %
 %   spm_hmm                  - fit the model (main function)
 %   spm_eeg_hmm              - fit the model to M/EEG datasets
@@ -18,6 +19,7 @@
 %   spm_hmm_find_flips       - signs aligning a covariance to a template
 %   spm_hmm_build_template   - template covariance from many sessions
 %   tbx_cfg_hmm              - batch interface (SPM > Tools > HMM)
+%   spm_hmm_params           - state probabilities, means and covariances
 %   spm_hmm_decode           - state probabilities and Viterbi paths
 %   spm_hmm_viterbi          - most probable state sequence (mode of q)
 %   spm_hmm_summary_stats    - occupancy, lifetimes, intervals, switching

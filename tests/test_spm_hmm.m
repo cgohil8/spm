@@ -1364,6 +1364,45 @@ function test_meeg_inmemory(testCase)
     testCase.verifyError(@() spm_eeg_hmm(setfield(S,'inmemory','yes')),'spm_hmm:invalidInput'); %#ok<SFLD>
 end
 
+function test_params(testCase)
+    % spm_hmm_params: model space = HMM.Ep; with all components kept, the
+    % channel-space moments equal the state-weighted moments of the data
+    files = make_meeg_datasets(testCase,'continuous');
+    O = struct('verbose',false,'ninit',1,'maxcyc',20,'zeromean',false);
+    [H,Do] = spm_eeg_hmm(struct('D',{files(1)},'K',2,'pca',4,'hmm',O,'prefix','pp_'));
+    P = spm_hmm_params(H);
+    testCase.verifyEqual(P.mu,H.Ep.mu); testCase.verifyEqual(P.Sigma,H.Ep.Sigma);
+    testCase.verifyEqual(P.A,H.Ep.A); testCase.verifyEqual(P.pi,H.Ep.pi(:));
+    Pc = spm_hmm_params(H,struct('space','channels'));
+    D  = spm_eeg_load(files{1});
+    x  = D(D.indchantype('LFP'),:,1)';
+    g  = Do{1}(1:2,:,1)'; g(H.missing{1},:) = 0;
+    for k = 1:2
+        w  = g(:,k)/sum(g(:,k));
+        m  = w'*x; c = (x - m)'*((x - m).*w);
+        testCase.verifyEqual(Pc.mu(:,k)',m,'RelTol',1e-2);
+        testCase.verifyEqual(Pc.Sigma(:,:,k),c,'RelTol',2e-2,'AbsTol',2e-2*max(abs(c(:))));
+    end
+    % PCA, embedding and PCA (all components): moments of the embedded data
+    lags = -1:1;
+    [H,Do] = spm_eeg_hmm(struct('D',{files(1)},'K',2,'pca',4,'tde',struct('lags',lags,'npca',12),...
+        'hmm',O,'prefix','pt_'));
+    Pc = spm_hmm_params(H,struct('space','channels'));
+    testCase.verifyEqual(size(Pc.Sigma),[12 12 2]);
+    testCase.verifyEqual(Pc.labels{5},'P1 (+0)'); testCase.verifyEqual(Pc.lags(5),0);
+    n  = size(x,1) - 2;
+    xe = [x(1:n,:) x(2:n+1,:) x(3:n+2,:)];                 % lags -1, 0, +1
+    g  = Do{1}(1:2,2:n+1,1)'; g(any(isnan(g),2) | H.missing{1},:) = 0;
+    for k = 1:2
+        w  = g(:,k)/sum(g(:,k));
+        m  = w'*xe; c = (xe - m)'*((xe - m).*w);
+        testCase.verifyEqual(Pc.mu(:,k)',m,'RelTol',1e-2);
+        testCase.verifyEqual(Pc.Sigma(:,:,k),c,'RelTol',2e-2,'AbsTol',2e-2*max(abs(c(:))));
+    end
+    testCase.verifyError(@() spm_hmm_params(struct('Ep',H.Ep,'K',2),struct('space','channels')),...
+        'spm_hmm:invalidInput');
+end
+
 end % methods (Test)
 end % classdef
 
