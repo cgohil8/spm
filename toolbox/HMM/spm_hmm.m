@@ -36,10 +36,14 @@ function HMM = spm_hmm(Y,S)
 %              is returned                                             [1]
 %   .parallel  use the open parallel pool, if there is one (Parallel
 %              Computing Toolbox; no pool is started)               [true]
-%              The initialisations and the complete fits run in parallel;
-%              for data on disk (e.g. spm_hmm_meeg_reader) the segments of
-%              each E-step are also shared between the workers. Use a
-%              process-based pool for data on disk. Workers of a process
+%              The initialisations and the complete fits run in parallel,
+%              and the segments of each E-step are shared between the
+%              workers. Use a thread-based pool (parpool('Threads')) for
+%              data in memory: a process-based pool would copy the data
+%              every E-step, so it only runs the initialisations and fits
+%              in parallel. Use a process-based pool for data on disk
+%              (e.g. spm_hmm_meeg_reader), which thread-based workers
+%              cannot read. Workers of a process
 %              pool use one computational thread by default; with fewer
 %              workers than cores, more threads can be given with
 %              parfevalOnAll(@maxNumCompThreads,0,n). Results agree with

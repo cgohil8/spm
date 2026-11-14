@@ -40,15 +40,25 @@ H     = 0;
 keep  = nargout > 2;
 gamma = cell(R.nseg,1);
 if nworkers > 0 && R.nseg > 1
-    % sums are reduced field by field
-    [N,S1,S2,Xi,g1,logZ,Tn] = deal(st.N,st.S1,st.S2,st.Xi,st.g1,st.logZ,st.T);
-    parfor (i = 1:R.nseg, nworkers)
-        [si,hi,gi] = segment_e_step(R,i,q,prior,keep);
-        N  = N + si.N;   S1 = S1 + si.S1; S2 = S2 + si.S2; Xi = Xi + si.Xi;
-        g1 = g1 + si.g1; logZ = logZ + si.logZ; Tn = Tn + si.T; H = H + hi;
-        gamma{i} = gi;
+    % Fixed groups of consecutive segments, summed in order afterwards: the
+    % result does not depend on the scheduling or the number of workers
+    G  = min(R.nseg,64);
+    gs = round(linspace(0,R.nseg,G+1));
+    sg = cell(G,1); hg = zeros(G,1); gg = cell(G,1);
+    parfor (j = 1:G, nworkers)
+        s = empty_sufficient_stats(K,D); h = 0; g = cell(gs(j+1)-gs(j),1); %#ok<PFBNS> (gs is small)
+        for i = gs(j)+1:gs(j+1)
+            [s,hi,g{i-gs(j)}] = segment_e_step(R,i,q,prior,keep,s);
+            h = h + hi;
+        end
+        sg{j} = s; hg(j) = h; gg{j} = g;
     end
-    st = struct('N',N,'S1',S1,'S2',S2,'Xi',Xi,'g1',g1,'logZ',logZ,'T',Tn);
+    for j = 1:G
+        f = fieldnames(st);
+        for k = 1:numel(f), st.(f{k}) = st.(f{k}) + sg{j}.(f{k}); end
+        H = H + hg(j);
+    end
+    gamma = cat(1,gg{:});
 else
     for i = 1:R.nseg
         [st,hi,gamma{i}] = segment_e_step(R,i,q,prior,keep,st);

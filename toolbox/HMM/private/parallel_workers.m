@@ -12,8 +12,10 @@ function n = parallel_workers(use,R,task)
 %   parallel worker gcp is empty, so nested loops run serially);
 % - for a thread-based pool when the data are read from disk, because the
 %   SPM file reader is a MEX file, which thread-based workers cannot run;
-% - for 'segments' when the data are held in memory, because every E-step
-%   would then copy the data to the workers, which costs more than it saves.
+% - for 'segments' when the data are held in memory and the pool is
+%   process-based, because every E-step would then copy the data to the
+%   workers, which costs more than it saves (thread-based workers share
+%   the memory, so they are used).
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -29,6 +31,7 @@ catch
 end
 if isempty(p), return; end
 inmemory = isfield(R,'inmemory') && R.inmemory;
-if isa(p,'parallel.ThreadPool') && ~inmemory, return; end
-if strcmpi(task,'segments') && inmemory, return; end
+isthread = isa(p,'parallel.ThreadPool');
+if isthread && ~inmemory, return; end
+if strcmpi(task,'segments') && inmemory && ~isthread, return; end
 n = p.NumWorkers;
