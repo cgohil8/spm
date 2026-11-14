@@ -15,6 +15,9 @@ function R = data_reader(Y,T)
 %   .read   function handle: y = R.read(i,lo,hi) returns samples lo:hi of
 %           segment i as a [hi-lo+1 x D] double matrix; rows containing
 %           NaN are missing samples
+%   .inmemory true for data held in memory (readers of data on disk, such
+%           as spm_hmm_meeg_reader, leave it out), which decides how
+%           parallel workers are used (see parallel_workers)
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -75,3 +78,4 @@ R.nseg = numel(Y);
 R.T    = cellfun(@(y) size(y,1),Y);
 R.D    = D;
 R.read = @(i,lo,hi) Y{i}(lo:hi,:);
+R.inmemory = true;

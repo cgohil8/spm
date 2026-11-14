@@ -98,7 +98,7 @@ for ep = 1:o.nepochs
         q  = spm_hmm_update_params(st,prior,q,rho(i),M/numel(j));
     end
     if o.Fevery > 0 && mod(ep,o.Fevery) == 0 && ep < o.nepochs
-        st = spm_hmm_infer_states(R,q,prior);
+        st = spm_hmm_infer_states(R,q,prior,parallel_workers(S.parallel,R,'segments'));
         Fhist(end+1) = st.logZ - spm_hmm_kl_divergence(q,prior); %#ok<AGROW>
         if S.verbose
             fprintf('spm_hmm: epoch %d/%d, rho = %.3g, F = %.8g\n',ep,o.nepochs,rho(i),Fhist(end));

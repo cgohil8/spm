@@ -1,12 +1,14 @@
-function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb)
+function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb,method)
 % Forward-backward recursion for the variational posterior over states
-% FORMAT [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb)
+% FORMAT [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb,method)
 %
 % lpi    - [K x 1] log initial-state potentials, E[log pi]
 % lA     - [K x K] log transition potentials, E[log A] (rows need not sum
 %          to one and must NOT be renormalised)
 % lb     - [T x K] log emission potentials, E[log p(y_t | s_t = k)]
 %          (set a row to zero for a missing sample)
+% method - 'auto': the compiled C version (private/forward_backward_mex.c)
+%          if available, otherwise MATLAB; or 'c' or 'matlab'     ['auto']
 %
 % gamma  - [T x K] marginal posteriors q(s_t = k)
 % Xi     - [K x K] summed pairwise posteriors sum_t q(s_t-1 = i, s_t = j)
@@ -20,6 +22,23 @@ function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb)
 % Chetan Gohil
 % Copyright (C) 2026 NDCN, University of Oxford
 
+
+if nargin < 4, method = 'auto'; end
+switch lower(method)
+    case 'auto',   use_c = c_version_available();
+    case 'c',      use_c = true;
+    case 'matlab', use_c = false;
+    otherwise, error('spm_hmm_forward_backward:invalidInput','method must be auto, c or matlab.');
+end
+if use_c
+    try
+        [gamma,Xi,logZ] = forward_backward_mex(lpi,lA,lb);
+        return
+    catch err
+        % MEX files cannot run on thread-based parallel workers
+        if startsWith(err.identifier,'spm_hmm') || strcmpi(method,'c'), rethrow(err); end
+    end
+end
 
 [T,K] = size(lb);
 A     = exp(lA);

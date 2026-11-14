@@ -260,10 +260,11 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
   - Otherwise use the stationary distribution of the row-normalised $\tilde{\mathbf A}$. This is an approximation, and the buffer absorbs it.
 - **Ownership.** Chunk $c$ contributes:
   - $\gamma_t$ for $t\in[a_c,b_c]$ (masked by $w_t$);
-  - $\xi_t$, the transition $t-1\to t$, for $t\in[a_c,b_c]$ excluding the segment start;
+  - $\xi_{t+1}$, the transition $t\to t+1$ out of each interior sample, for $t\in[a_c,b_c]$ excluding the segment end;
   - $\mathbf g^{(1)}$ only if $a_c$ is a segment start.
 - With these rules every quantity is counted exactly once.
-- A chunk that does not start at a segment start **needs a left buffer of at least 1**, otherwise the transition into $a_c$ is lost.
+- A chunk that does not end at a segment end **needs a right buffer of at least 1**, otherwise the transition out of $b_c$ is lost.
+- Owning the transitions *out of* the interior, rather than *into* it, is slightly more accurate with very short buffers: the transition at the left edge would depend on the approximate stationary start of the window, while the right edge only lacks later data. On the simulated test problem of §13, Xi errors with a buffer of 1 were $6\times10^{-5}$ against $9\times10^{-5}$, and with a buffer of 5 they were $10^{-7}$ against $7\times10^{-7}$.
 - To process chunks in parallel, windows have equal length, with padding as in §7.
 
 ### 8.4 Defaults and the initialisation for stochastic inference
@@ -546,26 +547,40 @@ Unlike HMM-MAR, our F is the correct bound (§6), the RNG is local, and the extr
 The subset statistics are rescaled to full-data size, so the starting posterior has the right concentration.
 This avoids HMM-MAR's over-counting, where each subject in a group receives the whole group's statistics.
 
-**Reproducibility.** Use a local `RandStream` seeded from options. The global RNG is never changed.
+**Reproducibility.** Use a local `RandStream` seeded from options. The global RNG is never changed. Restart $r$ draws from substream $r$ of an `mrg32k3a` stream seeded with `S.seed`, so restarts can run in parallel (§12) and give the same result in any order. Fits that reach the same optimum with permuted labels have F equal to rounding error; the first fit within $10^{-12}|F|$ of the best is kept, so serial and parallel runs choose the same one.
 
 ## 11a. Several complete fits
 
-`S.bestof = n` runs $n$ complete fits with seeds `S.seed`, `S.seed+1`, and so on. Each fit includes its own initialisations, so the fits are independent. The fit with the highest final F is kept, and `HMM.Fbestof` records every fit's F.
+`S.bestof = n` runs $n$ complete fits with seeds `S.seed`, `S.seed+1`, and so on. Each fit includes its own initialisations, so the fits are independent and can run in parallel. The fit with the highest final F is kept, and `HMM.Fbestof` records every fit's F. The fits run without state probabilities; one E-step with the kept posterior then gives them, exactly as the fit would have.
 
 ## 12. Numerical implementation notes
 
-- **Emissions:** compute $\mathbf W_k=\mathbf C_k^\top\mathbf C_k$ by Cholesky. Then $(\mathbf y-\mathbf m)^\top\mathbf W(\mathbf y-\mathbf m)=\|(\mathbf Y-\mathbf m^\top)\mathbf C_k^\top\|^2$ row-wise, at cost $O(TKD^2)$, vectorised over time.
+- **Emissions:** with $\mathbf W_k^{-1}=\mathbf R_k^\top\mathbf R_k$ (Cholesky), $(\mathbf y-\mathbf m_k)^\top\mathbf W_k(\mathbf y-\mathbf m_k)=\|(\mathbf y-\mathbf m_k)^\top\mathbf R_k^{-1}\|^2$. One matrix product $(\mathbf Y-\mathbf c^\top)[\mathbf R_1^{-1}\cdots\mathbf R_K^{-1}]$, in blocks of 4096 rows, gives all states at cost $O(TKD^2)$. The data are centred on $\mathbf c$, the mean of the state means, to avoid cancellation for data with a large offset.
+- **Sufficient statistics:** $\mathbf S_{2k}=\mathbf X_k^\top\mathbf X_k$ with $\mathbf X_k=\mathbf Y\odot\sqrt{\mathbf w_k}$, a symmetric product, in blocks of 8192 rows. For $D<32$ the general product $(\mathbf Y\odot\mathbf w_k)^\top\mathbf Y$ is faster and is used instead.
 - **Log-determinants** use Cholesky. Never call `det` or `inv` inside KL terms; use solves.
-- **Forward–backward:** use the scaled recursion of §4 with subtraction of the per-time maximum. There is no clamping and $\log\tilde Z$ is exact. Run it across chunks in parallel, one $K\times n_\text{chunks}$ operation per time step.
+- **Forward–backward:** use the scaled recursion of §4 with subtraction of the per-time maximum. There is no clamping and $\log\tilde Z$ is exact. A C version (`private/forward_backward_mex.c`) does the same arithmetic and is used when it is compiled; the MATLAB code is the fallback, and for chunks it runs all windows together, one $n_\text{chunks}\times K$ operation per time step.
 - **Precision matrices:** symmetrise every $\mathbf W_k^{-1}$. If Cholesky fails, **raise an error** instead of adding silent jitter.
 - **Dead states:** report $N_k$ and leave them alone; there is no forced pruning in version 1.
 - **MATLAB compatibility:** the code must run on R2020b, the oldest release in CI.
-- **Speed** (profiled on R2026b, Apple silicon, at a TDE-HMM size: $D=80$, $K=8$, zero mean, $5\times10^5$ samples):
-  - one full E-step takes 0.8 s: expected log-likelihood 50%, sufficient statistics 30%, forward–backward 15%;
-  - the first two are single BLAS calls per state (about 60 GFLOP/s), and the forward–backward loop costs 0.01 s per $5\times10^4$ samples under MATLAB's JIT;
-  - so a MEX implementation would gain little, and none is used;
-  - a stochastic epoch with 1000-sample chunks and 100-sample buffers costs about 1.5 full E-steps, because the buffers add 20% plus per-batch overhead;
-  - stochastic inference pays off when it needs fewer epochs than batch VB needs cycles, and when only mini-batches are read from disk.
+- **Speed** (R2026b, Apple silicon with 10 cores, zero mean, $10^6$ samples in 10 segments, data in memory, one process):
+
+  | $K$, $D$ | E-step, before → now | stochastic epoch, before → now |
+  |---|---|---|
+  | 8, 40 | 1.03 → 0.57 s | 1.55 → 1.08 s |
+  | 12, 80 | 2.71 → 1.68 s | 3.77 → 2.76 s |
+  | 6, 20 | 0.46 → 0.27 s | 0.68 → 0.55 s |
+
+  - "Before" is the per-state version: a triangular solve per state for the emissions, a general product per state for $\mathbf S_2$, and the forward–backward recursion in MATLAB.
+  - Per $10^6$ samples at $K=12$, $D=80$: emissions 1.54 → 0.88 s, statistics 0.77 → 0.50 s, forward–backward 0.29 → 0.14 s (C; 2–3.5× faster than MATLAB for $K$ from 2 to 16).
+  - All agree with the per-state code to $10^{-13}$ relative.
+  - MATLAB already spreads matrix products over all cores, but one process gains only 1.6× from 10 cores, so separate workers help.
+  - A stochastic epoch with 1000-sample chunks and 100-sample buffers costs about 1.6 full E-steps: the buffers add 20%, plus per-batch overhead.
+- **Parallel workers** (`S.parallel`, an open pool of the Parallel Computing Toolbox; none is started):
+  - Restarts and complete fits (`S.bestof`) are independent and run on the workers.
+  - For data on disk, each E-step of the final fit also shares its segments between workers, which read their own data. For data in memory this is not done, because every E-step would copy the data to the workers.
+  - Thread-based pools cannot run MEX files: the C recursion falls back to MATLAB there, and data on disk (read by SPM's MEX file reader) need a process-based pool.
+  - Measured with 8 segments of $10^5$ samples, $K=8$, $D=40$, 30 cycles: data on disk, serial 37.8 s → 25.8 s with 5 process workers of 2 threads; `bestof` 3, 42.8 → 28.5 s; data in memory (restarts only in parallel), 35.9 → 28.0 s. The restart phase alone ran 18.5 → 12 s with 10 thread workers, 10 process workers or 5 workers of 2 threads alike, which suggests memory bandwidth is the limit on this machine.
+  - Results agree with serial runs to rounding error: F to $10^{-15}$, state probabilities to $10^{-13}$.
 
 ## 13. Verification (MATLAB R2026b)
 
@@ -591,7 +606,10 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 |---|---|
 | Chunks equal to whole segments: chunked E-step against full E-step (with missing samples) | agree to $10^{-11}$ |
 | Chunks of unequal length processed together, against one at a time (padding is neutral) | agree to $10^{-12}$ |
-| Owned statistics of 250-sample chunks with a 50-sample buffer, summed, against full-data statistics | agree to $10^{-15}$ (buffer 1: $10^{-2}$; buffer 5: $10^{-5}$) |
+| Owned statistics of 250-sample chunks with a 50-sample buffer, summed, against full-data statistics | agree to $10^{-15}$ (buffer 1: $10^{-4}$; buffer 5: $10^{-7}$) |
+| Owned statistics of each chunk, buffer 1, against enumeration of all paths over its window | agree to $10^{-12}$ (MATLAB and C) |
+| Compiled (C) forward–backward against the MATLAB code | agree to $10^{-12}$ |
+| Serial against parallel runs (thread and process pools) | F to $10^{-15}$, state probabilities to $10^{-13}$ |
 | Stochastic inference with $\rho=1$, all chunks in each batch, chunks equal to segments | F never decreases (it is batch VB) |
 | Stochastic inference against batch VB (3,500 samples; 250-sample chunks; 4 chunks per batch) | relative F difference $2\times10^{-5}$; >95% of states recovered |
 | Benchmark: 40 × 10,000 samples, D = 10, K = 6, zero mean (not in CI) | batch 8.8 s; stochastic 3.7 s for 10 epochs; F gap 0.9–2.4 nats ($2$–$6\times10^{-6}$ per sample), shrinking every epoch |
@@ -719,6 +737,8 @@ The checks in all ten tables are in `tests/test_spm_hmm.m`, except the nine mark
 | §11a several complete fits | `spm_hmm` (`S.bestof`) |
 | batch interface | `tbx_cfg_hmm` (SPM > Tools > HMM) |
 | all data access (memory or disk) | `private/data_reader` |
+| compiled forward–backward (C) | `private/forward_backward_mex.c`, `private/Makefile`, `private/c_version_available` |
+| parallel workers | `private/parallel_workers` |
 | simulation | `spm_hmm_simulate` |
 | tests | `tests/test_spm_hmm.m` |
 

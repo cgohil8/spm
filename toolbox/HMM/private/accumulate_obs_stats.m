@@ -17,7 +17,23 @@ if ~prior.zeromean
 end
 st.N  = st.N + sum(w,1);
 st.S1 = st.S1 + y'*w;
-for k = 1:size(w,2)
-    st.S2(:,:,k) = st.S2(:,:,k) + (y.*w(:,k))'*y;
+st.T  = st.T + sum(~miss);
+K = size(w,2);
+if size(y,2) < 32
+    % small D: a general product is faster
+    for k = 1:K
+        st.S2(:,:,k) = st.S2(:,:,k) + (y.*w(:,k))'*y;
+    end
+else
+    % S2 as x'*x with x = y.*sqrt(w), a symmetric product, in blocks of rows
+    block = 8192;
+    for lo = 1:block:size(y,1)
+        hi = min(lo+block-1,size(y,1));
+        yb = y(lo:hi,:);
+        sw = sqrt(w(lo:hi,:));
+        for k = 1:K
+            x = yb.*sw(:,k);
+            st.S2(:,:,k) = st.S2(:,:,k) + x'*x;
+        end
+    end
 end
-st.T = st.T + sum(~miss);

@@ -1,12 +1,14 @@
-function [st,H,gamma] = spm_hmm_infer_states(Y,q,prior)
+function [st,H,gamma] = spm_hmm_infer_states(Y,q,prior,nworkers)
 % E-step: update q(states) and accumulate sufficient statistics
-% FORMAT [st,H,gamma] = spm_hmm_infer_states(Y,q,prior)
+% FORMAT [st,H,gamma] = spm_hmm_infer_states(Y,q,prior,nworkers)
 %
 % Y      - data: cell array of [T_i x D] segments, [T x D] matrix (one
 %          segment), or a data reader (see spm_hmm_meeg_reader).
 %          Rows with NaN are missing samples.
 % q      - posterior over parameters (see spm_hmm_update_params)
 % prior  - prior (see spm_hmm_set_priors)
+% nworkers - number of parallel workers to share the segments between
+%          (segments run on an open pool; 0: serially)                [0]
 %
 % st     - sufficient statistics, summed over segments:
 %   .N     [1 x K]     sum_t w_t gamma_tk                 (w_t = observed)
@@ -29,40 +31,64 @@ function [st,H,gamma] = spm_hmm_infer_states(Y,q,prior)
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
+if nargin < 4, nworkers = 0; end
 R     = data_reader(Y);
+K     = q.K;
+D     = q.D;
+st    = empty_sufficient_stats(K,D);
+H     = 0;
+keep  = nargout > 2;
+gamma = cell(R.nseg,1);
+if nworkers > 0 && R.nseg > 1
+    % sums are reduced field by field
+    [N,S1,S2,Xi,g1,logZ,Tn] = deal(st.N,st.S1,st.S2,st.Xi,st.g1,st.logZ,st.T);
+    parfor (i = 1:R.nseg, nworkers)
+        [si,hi,gi] = segment_e_step(R,i,q,prior,keep);
+        N  = N + si.N;   S1 = S1 + si.S1; S2 = S2 + si.S2; Xi = Xi + si.Xi;
+        g1 = g1 + si.g1; logZ = logZ + si.logZ; Tn = Tn + si.T; H = H + hi;
+        gamma{i} = gi;
+    end
+    st = struct('N',N,'S1',S1,'S2',S2,'Xi',Xi,'g1',g1,'logZ',logZ,'T',Tn);
+else
+    for i = 1:R.nseg
+        [st,hi,gamma{i}] = segment_e_step(R,i,q,prior,keep,st);
+        H = H + hi;
+    end
+end
+
+
+%==========================================================================
+function [st,H,g] = segment_e_step(R,i,q,prior,keep,st)
+% E-step of segment i; its statistics are added to st (empty if not given)
 block = 1e5;
 K     = q.K;
-st    = empty_sufficient_stats(K,q.D);
-H     = 0;
-if nargout > 2, gamma = cell(R.nseg,1); end
-for i = 1:R.nseg
-    T    = R.T(i);
-    lb   = zeros(T,K);
-    miss = false(T,1);
+if nargin < 6, st = empty_sufficient_stats(K,q.D); end
+T    = R.T(i);
+lb   = zeros(T,K);
+miss = false(T,1);
+for lo = 1:block:T
+    hi = min(lo+block-1,T);
+    y  = R.read(i,lo,hi);
+    m  = any(isnan(y),2);
+    l  = spm_hmm_expected_loglik(y,q);
+    l(m,:) = 0;
+    lb(lo:hi,:)  = l;
+    miss(lo:hi)  = m;
+end
+[g,Xi,logZ] = spm_hmm_forward_backward(q.lpi,q.lA,lb);
+
+if T <= block                       % data of this segment still in y
+    st = accumulate_obs_stats(st,y,g,miss,prior);
+else
     for lo = 1:block:T
         hi = min(lo+block-1,T);
-        y  = R.read(i,lo,hi);
-        m  = any(isnan(y),2);
-        l  = spm_hmm_expected_loglik(y,q);
-        l(m,:) = 0;
-        lb(lo:hi,:)  = l;
-        miss(lo:hi)  = m;
+        st = accumulate_obs_stats(st,R.read(i,lo,hi),g(lo:hi,:),miss(lo:hi),prior);
     end
-    [g,Xi,logZ] = spm_hmm_forward_backward(q.lpi,q.lA,lb);
-
-    if T <= block                       % data of this segment still in y
-        st = accumulate_obs_stats(st,y,g,miss,prior);
-    else
-        for lo = 1:block:T
-            hi = min(lo+block-1,T);
-            st = accumulate_obs_stats(st,R.read(i,lo,hi),g(lo:hi,:),miss(lo:hi),prior);
-        end
-    end
-    st.Xi   = st.Xi + Xi;
-    st.g1   = st.g1 + g(1,:);
-    st.logZ = st.logZ + logZ;
-
-    % H[q(s)] = logZ - E_q(s)[log potentials]
-    H = H + logZ - (g(1,:)*q.lpi(:) + sum(Xi(:).*q.lA(:)) + sum(sum(g.*lb)));
-    if nargout > 2, gamma{i} = g; end
 end
+st.Xi   = st.Xi + Xi;
+st.g1   = st.g1 + g(1,:);
+st.logZ = st.logZ + logZ;
+
+% H[q(s)] = logZ - E_q(s)[log potentials]
+H = logZ - (g(1,:)*q.lpi(:) + sum(Xi(:).*q.lA(:)) + sum(sum(g.*lb)));
+if ~keep, g = []; end

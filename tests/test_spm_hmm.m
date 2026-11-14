@@ -549,7 +549,67 @@ function test_bestof_keeps_highest_free_energy(testCase)
     testCase.verifyEqual(numel(H.Fbestof),3);
     testCase.verifyEqual(H.F,max(H.Fbestof));
     H1 = spm_hmm(Y,S);                          % first fit uses S.seed
-    testCase.verifyEqual(H.Fbestof(1),H1.F);
+    testCase.verifyEqual(H.Fbestof(1),H1.F,'RelTol',1e-12);   % fits may run on workers
+    % the state probabilities of the kept fit are those of that fit alone
+    [~,ib] = max(H.Fbestof);
+    Hb = spm_hmm(Y,setfield(S,'seed',S.seed + ib - 1)); %#ok<SFLD>
+    testCase.verifyEqual(H.gamma,Hb.gamma,'AbsTol',1e-12);
+end
+
+function test_initialisations_do_not_depend_on_order(testCase)
+    % initialisation r draws from its own substream, so parallel workers
+    % give the same result: the first restarts of a longer run match
+    Y  = simulated_problem(false);
+    S  = struct('K',3,'verbose',false,'initcyc',2,'maxcyc',1,'seed',3);
+    H3 = spm_hmm(Y,setfield(S,'ninit',3)); %#ok<SFLD>
+    H5 = spm_hmm(Y,setfield(S,'ninit',5)); %#ok<SFLD>
+    testCase.verifyEqual(H5.Finit(1:3),H3.Finit,'RelTol',1e-12);
+    testCase.verifyEqual(numel(unique(H5.Finit)),5);
+end
+
+function test_chunk_ownership_against_enumeration(testCase)
+    % a chunk owns gamma on its interior and the transitions out of its
+    % interior samples, computed over its window, which starts from pi at a
+    % segment start and from the stationary distribution otherwise
+    [q,prior] = random_posterior(2,2,false);
+    y  = randn(8,2);
+    lb = spm_hmm_expected_loglik(y,q);
+    P  = exp(q.lA); P = P./sum(P,2);
+    [V,E] = eig(P'); [~,i] = min(abs(diag(E) - 1));
+    p0 = abs(V(:,i))/sum(abs(V(:,i)));
+    ch = spm_hmm_make_chunks(8,3,1);
+    for m = recursion_methods()
+        for c = 1:size(ch,1)
+            a = ch(c,2); b = ch(c,3); lo = ch(c,4); hi = ch(c,5);
+            if lo == 1, lp = q.lpi(:); else, lp = log(p0); end
+            [gB,XiB] = enumerate_paths(lp,q.lA,lb(lo:hi,:),[a+1 min(b+1,hi)] - lo + 1);
+            [st,g] = spm_hmm_infer_states_chunked({y},ch(c,:),q,prior,m{1});
+            testCase.verifyEqual(st.Xi,XiB,'AbsTol',1e-12);
+            testCase.verifyEqual(g{1},gB(a-lo+1:b-lo+1,:),'AbsTol',1e-12);
+        end
+    end
+end
+
+function test_compiled_recursion_matches_matlab(testCase)
+    m = recursion_methods();
+    testCase.assumeTrue(numel(m) == 2,'The compiled recursion is not available.');
+    [q,prior] = random_posterior(3,4,false);
+    y  = randn(3000,3); y(100:120,:) = NaN;
+    lb = spm_hmm_expected_loglik(y,q); lb(any(isnan(y),2),:) = 0;
+    [g0,X0,z0] = spm_hmm_forward_backward(q.lpi,q.lA,lb,'matlab');
+    [g1,X1,z1] = spm_hmm_forward_backward(q.lpi,q.lA,lb,'c');
+    testCase.verifyEqual(g1,g0,'AbsTol',1e-12);
+    testCase.verifyEqual(X1,X0,'RelTol',1e-11);
+    testCase.verifyEqual(z1,z0,'RelTol',1e-12);
+    Y  = {y(1:1700,:); y(1701:end,:)};
+    ch = spm_hmm_make_chunks([1700 1300],250,20);
+    [s0,c0] = spm_hmm_infer_states_chunked(Y,ch,q,prior,'matlab');
+    [s1,c1] = spm_hmm_infer_states_chunked(Y,ch,q,prior,'c');
+    verify_stats_equal(testCase,s1,s0,1e-11);
+    testCase.verifyEqual(s1.logZ,s0.logZ,'RelTol',1e-12);
+    testCase.verifyEqual(cat(1,c1{:}),cat(1,c0{:}),'AbsTol',1e-12);
+    lb(5,:) = -Inf;
+    testCase.verifyError(@() spm_hmm_forward_backward(q.lpi,q.lA,lb,'c'),'spm_hmm_forward_backward:numerical');
 end
 
 function test_batch_interface(testCase)
@@ -641,8 +701,9 @@ function test_ae_hmm_recovers_amplitude_states(testCase)
     % states differ only in the 10 Hz oscillation amplitude of each channel
     [file,s] = amplitude_states_dataset(testCase);
     Do  = spm_eeg_hmm_envelope(struct('D',file,'freq',[5 15],'window',5));
+    % this problem has many local optima: 10 initialisations, not 5
     HMM = spm_eeg_hmm(struct('D',fullfile(Do),'K',3,'lifetime',0.5,'write',false,...
-        'hmm',struct('verbose',false)));
+        'hmm',struct('verbose',false,'ninit',10)));
     testCase.verifyFalse(HMM.zeromean);
     g  = onehot(double(HMM.path{1}),3);
     ok = ~HMM.missing{1};
@@ -871,7 +932,7 @@ function test_meeg_spectra(testCase)
     [file,s] = amplitude_states_dataset(testCase);
     Do  = spm_eeg_hmm_envelope(struct('D',file,'freq',[5 15],'window',5));
     [HMM,Dst] = spm_eeg_hmm(struct('D',fullfile(Do),'K',3,'lifetime',0.5,...
-        'hmm',struct('verbose',false)));
+        'hmm',struct('verbose',false,'ninit',10)));
     sv = spm_eeg_hmm_spectra(struct('D',file,'HMM',HMM,'freq',[1 40]));
     sp = spm_eeg_hmm_spectra(struct('D',file,'HMM',HMM,'states',{Dst},'freq',[1 40]));
     testCase.verifyEqual(size(sv.psd),[1 3 4 numel(sv.f)]);
@@ -1358,6 +1419,16 @@ function g = onehot(p,K)
 g = full(sparse(1:numel(p),p,1,numel(p),K));
 end
 
+function m = recursion_methods()
+% implementations of the forward-backward recursion available here
+m = {'matlab'};
+try
+    spm_hmm_forward_backward(0,0,0,'c');
+    m{end+1} = 'c';
+catch
+end
+end
+
 function verify_stats_equal(testCase,a,b,tol)
 testCase.verifyEqual(a.N,b.N,'RelTol',tol);
 testCase.verifyEqual(a.S1,b.S1,'AbsTol',tol*max(abs(b.S1(:))));
@@ -1430,8 +1501,11 @@ perm = zeros(1,K);
 perm(inv_map) = 1:K;
 end
 
-function [g,Xi,logZ,H] = enumerate_paths(lpi,lA,lb)
+function [g,Xi,logZ,H] = enumerate_paths(lpi,lA,lb,xirange)
+% Posterior marginals by summing over all K^T paths; Xi sums the
+% transitions into samples xirange(1) to xirange(2)          [[2 T]]
 [T,K] = size(lb);
+if nargin < 4, xirange = [2 T]; end
 n  = K^T;
 S  = zeros(n,T);
 sc = zeros(n,1);
@@ -1448,7 +1522,7 @@ Xi = zeros(K);
 for i = 1:n
     s = S(i,:);
     for t = 1:T, g(t,s(t)) = g(t,s(t)) + p(i); end
-    for t = 2:T, Xi(s(t-1),s(t)) = Xi(s(t-1),s(t)) + p(i); end
+    for t = max(2,xirange(1)):xirange(2), Xi(s(t-1),s(t)) = Xi(s(t-1),s(t)) + p(i); end
 end
 H = -sum(p.*log(p));
 end

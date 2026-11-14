@@ -28,9 +28,22 @@ function HMM = spm_hmm(Y,S)
 %   .maxcyc    maximum VB cycles                                     [500]
 %   .tol       convergence: change in F < tol*|F|                   [1e-7]
 %   .seed      random seed (the global random stream is not used)      [0]
+%              Initialisation r draws from substream r of an mrg32k3a
+%              stream with this seed, so results do not depend on the
+%              order or number of parallel workers.
 %   .bestof    number of complete fits (each with its own initialisations
 %              and seed S.seed + r - 1); the one with the highest final F
 %              is returned                                             [1]
+%   .parallel  use the open parallel pool, if there is one (Parallel
+%              Computing Toolbox; no pool is started)               [true]
+%              The initialisations and the complete fits run in parallel;
+%              for data on disk (e.g. spm_hmm_meeg_reader) the segments of
+%              each E-step are also shared between the workers. Use a
+%              process-based pool for data on disk. Workers of a process
+%              pool use one computational thread by default; with fewer
+%              workers than cores, more threads can be given with
+%              parfevalOnAll(@maxNumCompThreads,0,n). Results agree with
+%              serial runs to rounding error.
 %   .verbose   print progress                                       [true]
 %   .keepgamma return state probabilities in HMM.gamma              [true]
 %   .inference 'batch' or 'stochastic'                             ['batch']
@@ -85,55 +98,73 @@ R = data_reader(Y,S.T);
 %-Several complete fits: keep the one with the highest F
 %--------------------------------------------------------------------------
 if S.bestof > 1
-    Fbestof = zeros(1,S.bestof);
-    for r = 1:S.bestof
-        Sr = S; Sr.bestof = 1; Sr.seed = S.seed + r - 1; Sr.T = [];
-        if S.verbose, fprintf('spm_hmm: complete fit %d/%d\n',r,S.bestof); end
-        H = spm_hmm(R,Sr);
-        Fbestof(r) = H.F;
-        if r == 1 || H.F > HMM.F, HMM = H; end
+    % fits run without state probabilities, which are computed once for
+    % the best fit (from its final posterior, as the fit itself would)
+    nw = parallel_workers(S.parallel,R,'fits');
+    nf = S.bestof;
+    Sr = S; Sr.bestof = 1; Sr.T = []; Sr.keepgamma = false;
+    Sr.verbose = S.verbose && nw == 0;
+    H  = cell(1,nf);
+    parfor (r = 1:nf, nw)
+        Si = Sr; Si.seed = Sr.seed + r - 1;
+        if Sr.verbose, fprintf('spm_hmm: complete fit %d/%d\n',r,nf); end
+        H{r} = spm_hmm(R,Si);
+    end
+    Fbestof = cellfun(@(h) h.F,H);
+    ib      = first_best(Fbestof);
+    HMM     = H{ib};
+    if S.keepgamma
+        [~,~,HMM.gamma] = spm_hmm_infer_states(R,HMM.q,HMM.prior,...
+            parallel_workers(S.parallel,R,'segments'));
+    end
+    if S.verbose
+        fprintf('spm_hmm: complete fits, F = %s; kept fit %d\n',mat2str(Fbestof,8),ib);
     end
     HMM.Fbestof = Fbestof;
     HMM.options = S;
     return
 end
 
-stream = RandStream('mt19937ar','Seed',S.seed);
 prior  = spm_hmm_set_priors(R,S);
+nwseg  = parallel_workers(S.parallel,R,'segments');
 
 if strcmpi(S.inference,'stochastic')
     %-Stochastic variational inference
     %----------------------------------------------------------------------
+    stream = RandStream('mt19937ar','Seed',S.seed);
     [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream);
     if S.keepgamma
-        [st,~,gamma] = spm_hmm_infer_states(R,q,prior);
+        [st,~,gamma] = spm_hmm_infer_states(R,q,prior,nwseg);
     else
-        st = spm_hmm_infer_states(R,q,prior); gamma = {};
+        st = spm_hmm_infer_states(R,q,prior,nwseg); gamma = {};
     end
     KL    = spm_hmm_kl_divergence(q,prior);
     Fhist = [Fhist st.logZ - KL];
 else
     %-Initialisations
     %----------------------------------------------------------------------
-    best  = struct('F',-Inf,'q',[]);
     Finit = zeros(1,S.ninit);
-    for r = 1:S.ninit
-        gamma = initial_state_probs(R,S,prior,stream);
-        q     = spm_hmm_update_params(sufficient_stats_from_probs(R,gamma,prior),prior);
-        [q,F] = run_variational_bayes(R,q,prior,S.initcyc,S.tol,false,false);
-        Finit(r) = F(end);
-        if S.verbose
-            fprintf('spm_hmm: initialisation %d/%d, F = %.6g\n',r,S.ninit,F(end));
-        end
-        if F(end) > best.F, best.F = F(end); best.q = q; end
+    Q     = cell(1,S.ninit);
+    parfor (r = 1:S.ninit, parallel_workers(S.parallel,R,'fits'))
+        g0 = initial_state_probs(R,S,prior,restart_stream(S.seed,r));
+        q0 = spm_hmm_update_params(sufficient_stats_from_probs(R,g0,prior),prior);
+        [q0,F0]  = run_variational_bayes(R,q0,prior,S.initcyc,S.tol,false,false,0);
+        Finit(r) = F0(end);
+        Q{r}     = q0;
     end
-    if isempty(best.q)
+    if S.verbose
+        fprintf('spm_hmm: initialisation %d/%d, F = %.6g\n',[1:S.ninit; repmat(S.ninit,1,S.ninit); Finit]);
+    end
+    if ~any(Finit > -Inf)
         error('spm_hmm:numerical','The free energy is not finite for any initialisation.');
     end
+    ib     = first_best(Finit);
+    best   = struct('F',Finit(ib),'q',Q{ib});
 
     %-Variational Bayes
     %----------------------------------------------------------------------
-    [q,Fhist,st,gamma,KL] = run_variational_bayes(R,best.q,prior,S.maxcyc,S.tol,S.verbose,S.keepgamma);
+    [q,Fhist,st,gamma,KL] = run_variational_bayes(R,best.q,prior,S.maxcyc,S.tol,...
+        S.verbose,S.keepgamma,nwseg);
     rho = [];
 end
 
@@ -157,15 +188,16 @@ HMM.options  = S;
 
 
 %==========================================================================
-function [q,F,st,gamma,KL] = run_variational_bayes(R,q,prior,maxcyc,tol,verbose,keepgamma)
+function [q,F,st,gamma,KL] = run_variational_bayes(R,q,prior,maxcyc,tol,verbose,keepgamma,nw)
 % Alternate E- and M-steps; F is evaluated after each E-step, so the
-% returned q, gamma and F are mutually consistent.
+% returned q, gamma and F are mutually consistent. nw workers share the
+% segments of each E-step.
 F = zeros(1,maxcyc);
 for it = 1:maxcyc
     if keepgamma
-        [st,~,gamma] = spm_hmm_infer_states(R,q,prior);
+        [st,~,gamma] = spm_hmm_infer_states(R,q,prior,nw);
     else
-        st = spm_hmm_infer_states(R,q,prior);
+        st = spm_hmm_infer_states(R,q,prior,nw);
         gamma = {};
     end
     KL    = spm_hmm_kl_divergence(q,prior);
@@ -191,7 +223,8 @@ F = F(1:it);
 function S = set_defaults(S)
 def = struct('T',[],'zeromean',false,'lifetime',10,'prior',struct(),...
     'init','random','initdiag',[],'ninit',5,'initcyc',10,'maxcyc',500,'tol',1e-7,...
-    'seed',0,'bestof',1,'verbose',true,'keepgamma',true,'inference','batch','svi',struct());
+    'seed',0,'bestof',1,'parallel',true,'verbose',true,'keepgamma',true,...
+    'inference','batch','svi',struct());
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}) || (isempty(S.(fn{i})) && ~isstruct(def.(fn{i})))
@@ -220,6 +253,8 @@ check(posint(S.initcyc),'S.initcyc must be a positive integer.');
 check(posint(S.maxcyc), 'S.maxcyc must be a positive integer.');
 check(posint(S.bestof), 'S.bestof must be a positive integer.');
 check(isscalar(S.tol) && S.tol >= 0,'S.tol must be non-negative.');
+check(isscalar(S.seed) && S.seed >= 0 && S.seed == round(S.seed) && ...
+    S.seed + S.bestof - 1 < 2^32,'S.seed must be an integer in [0, 2^32 - S.bestof].');
 check(isscalar(S.lifetime) && isfinite(S.lifetime),'S.lifetime must be finite.');
 check(posintI(S.svi.chunklength),'S.svi.chunklength must be a positive integer (or Inf).');
 check(posint(S.svi.buffer),      'S.svi.buffer must be a positive integer.');
@@ -253,3 +288,19 @@ for k = 1:q.K
         Ep.Sigma(:,:,k) = NaN;
     end
 end
+
+
+%==========================================================================
+function s = restart_stream(seed,r)
+% independent random stream for initialisation r
+s = RandStream('mrg32k3a','Seed',seed);
+s.Substream = r;
+
+
+%==========================================================================
+function i = first_best(F)
+% index of the first F within rounding error of the largest (NaN is never
+% chosen): fits that reach the same optimum with permuted state labels
+% then give the same choice in serial and parallel runs
+Fmax = max(F);
+i    = find(F >= Fmax - 1e-12*abs(Fmax),1);
