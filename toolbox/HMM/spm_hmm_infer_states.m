@@ -7,8 +7,8 @@ function [st,H,gamma] = spm_hmm_infer_states(Y,q,prior,nworkers)
 %          Rows with NaN are missing samples.
 % q      - posterior over parameters (see spm_hmm_update_params)
 % prior  - prior (see spm_hmm_set_priors)
-% nworkers - number of parallel workers to share the segments between
-%          (segments run on an open pool; 0: serially)                [0]
+% nworkers - number of workers of the open parallel pool to share the
+%          segments between (0: serially; see parallel_workers)       [0]
 %
 % st     - sufficient statistics, summed over segments:
 %   .N     [1 x K]     sum_t w_t gamma_tk                 (w_t = observed)

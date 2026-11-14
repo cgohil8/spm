@@ -11,7 +11,7 @@
  * lA     - [K x K] log transition potentials (not renormalised)
  * lb     - [T x K] log emission potentials
  * xirange - [first last]: Xi sums the transitions into samples first to
- *          last (1-based)                                       [[2 T]]
+ *          last (1-based; empty if last < first)                [[2 T]]
  *
  * gamma  - [T x K] marginal posteriors
  * Xi     - [K x K] summed pairwise posteriors
@@ -61,11 +61,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             mexErrMsgIdAndTxt("spm_hmm_forward_backward:invalidInput",
                 "xirange must have two elements.");
         r = mxGetPr(prhs[3]);
-        if (!(r[0] >= 1) || !(r[1] <= (double)T) || r[0] != floor(r[0]) || r[1] != floor(r[1]))
+        if (!(r[0] >= 1) || !(r[0] <= (double)T + 1) || !(r[1] >= 0) || !(r[1] <= (double)T)
+                || r[0] != floor(r[0]) || r[1] != floor(r[1]))
             mexErrMsgIdAndTxt("spm_hmm_forward_backward:invalidInput",
-                "xirange must contain integers between 1 and T.");
-        x0 = (mwSize)r[0] - 1; if (x0 < 1) x0 = 1;
-        x1 = (mwSize)r[1] - 1;
+                "xirange must be [first last] with 1 <= first <= T+1 and 0 <= last <= T.");
+        x0 = (mwSize)r[0] - 1; if (x0 < 1) x0 = 1;    /* first >= 1, so no wrap */
+        if (r[1] < 1) { x0 = 1; x1 = 0; }            /* empty range */
+        else x1 = (mwSize)r[1] - 1;
     }
 
     plhs[0] = mxCreateDoubleMatrix(T, K, mxREAL);
@@ -90,6 +92,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             A[i*K + j] = exp(lA[i + j*K]);
 
     /* Emission potentials, max-subtracted per sample */
+    for (t = 0; t < T; t++)
+        for (j = 0; j < K; j++)
+            if (mxIsNaN(lb[t + j*T])) {
+                mxFree(A); mxFree(B); mxFree(alpha); mxFree(beta); mxFree(c); mxFree(tmp);
+                mexErrMsgIdAndTxt("spm_hmm_forward_backward:invalidInput",
+                    "lb contains NaN (set missing samples to zero).");
+            }
     for (t = 0; t < T; t++) {
         mx = lb[t];
         for (j = 1; j < K; j++) if (lb[t + j*T] > mx) mx = lb[t + j*T];

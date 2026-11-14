@@ -43,7 +43,7 @@ for k = 1:K
     fill(ax,[k - s; flipud(k + s)],[y{k}; flipud(y{k})],col(k,:),...
         'EdgeColor',0.25*[1 1 1],'Tag','violin');
     q  = percentile_linear(x,[25 50 75]);
-    sq = interp1(y{k},s,q);
+    sq = interp1(y{k},s,min(max(q,y{k}(1)),y{k}(end)));   % rounding at the ends
     ls = {':','--',':'};
     for j = 1:3
         plot(ax,k + [-sq(j) sq(j)],[q(j) q(j)],ls{j},'Color',0.25*[1 1 1],...

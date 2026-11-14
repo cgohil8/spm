@@ -25,8 +25,9 @@ function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb,method)
 
 
 if nargin < 4, method = 'auto'; end
+isdbl = @(x) isa(x,'double') && isreal(x) && ~issparse(x);
 switch lower(method)
-    case 'auto',   use_c = c_version_available();
+    case 'auto',   use_c = c_version_available() && isdbl(lpi) && isdbl(lA) && isdbl(lb);
     case 'c',      use_c = true;
     case 'matlab', use_c = false;
     otherwise, error('spm_hmm_forward_backward:invalidInput','method must be auto, c or matlab.');
@@ -41,6 +42,9 @@ if use_c
     end
 end
 
+if any(isnan(lb(:)))
+    error('spm_hmm_forward_backward:invalidInput','lb contains NaN (set missing samples to zero).');
+end
 [T,K] = size(lb);
 A     = exp(lA);
 mx    = max(lb,[],2);

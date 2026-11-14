@@ -200,7 +200,7 @@ Drop the last term in the zero-mean case.
 ### 6.5 Comparing models with different K
 
 F bounds the evidence of one labelling of the states. When the posterior modes are well separated,
-$\log p(Y\mid K)\approx F+\log K!$ (Bishop 2006, §10.2.4). Add $\log K!$ whenever F is compared across K.
+$\log p(Y\mid K)\approx F+\log K!$ (Bishop 2006, §10.2.4). Add $\log K!$ whenever F is compared across K. This assumes priors that are the same for every state label, as the defaults are; with label-specific priors (e.g. different rows of a user `beta0`), the $K!$ modes are not equivalent and $F+\log K!$ can exceed the evidence.
 
 ## 7. Segments, missing samples and padding
 
@@ -304,7 +304,7 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
    - $\mathbf g^{(1)}$ to sum to the number of segments, because every subset chunk counts as a segment start;
    - $\boldsymbol\Xi$ to sum to $T-$(number of segments), the number of transitions in the data, because the transitions into each subset chunk's first sample are missing (without this the total would be about $T-M$).
 
-With `S.init` given as state probabilities, the posterior is instead initialised from them on all the data, and the random paths use `initdiag` computed from the segment lengths, as in batch mode.
+The random paths of the subset initialisation use `initdiag` computed from the segment lengths, as in batch mode, not from the chunk lengths. With `S.init` given as state probabilities, the posterior is instead initialised from them on all the data (no random paths). The scaling $M/M_\text{exam}$ is a ratio estimator, because $M_\text{exam}$ depends on how many empty chunks were skipped; its small bias affects only the starting concentration.
 
 ### 8.5 Monitoring and the final free energy
 
@@ -513,7 +513,7 @@ $$
 \delta=\beta_0\big(K(L-1)-L\big)\quad\Rightarrow\quad \mathbb E_\text{prior}[A_{ii}]=1-1/L,
 $$
 
-which needs $L\ge K/(K-1)$.
+and $L\ge K/(K-1)$ makes $\delta\ge0$, i.e. the prior favours staying ($L>1$ alone keeps the Dirichlet parameters positive; the code requires $L\ge K/(K-1)$).
 
 - Each row carries $\beta_0L(K-1)$ pseudo-counts. For example, $K=8$ and $L=25$ give 175, against $\sim T/K$ observed transitions per row.
 - So with large datasets the prior mainly matters for states that receive almost no data.
@@ -543,7 +543,7 @@ Unlike HMM-MAR, our F is the correct bound (§6), the RNG is local, and the extr
 - All restarts must compute F on the **same data**: the same subset of sessions when the dataset is large.
 - `S.bestof` runs several complete fits and keeps the one with the highest final exact F (§11a, §8.5).
 
-**Moving from a subset to SVI on all data.** Initialise $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
+**Moving from a subset to SVI on all data.** Initialise $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{exam}}\mathbf t_\text{sub}$ (§8.4).
 The subset statistics are rescaled to full-data size, so the starting posterior has the right concentration.
 This avoids HMM-MAR's over-counting, where each subject in a group receives the whole group's statistics.
 

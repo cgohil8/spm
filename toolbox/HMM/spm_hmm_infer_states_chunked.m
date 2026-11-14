@@ -76,7 +76,7 @@ for c = 1:C
 end
 mx = max(LB,[],2);
 if ~all(isfinite(mx(:)))
-    error('spm_hmm:numerical',['Every state has zero likelihood at %d ' ...
+    error('spm_hmm_forward_backward:numerical',['Every state has zero likelihood at %d ' ...
         'sample(s); check the scale of the data.'],sum(~isfinite(mx(:))));
 end
 B  = exp(LB - mx);
@@ -103,7 +103,7 @@ for t = 2:Lw
     alpha(:,:,t) = a./cs(:,t);
 end
 if ~all(cs(:) > 0)
-    error('spm_hmm:numerical','Zero probability path (underflow in transitions).');
+    error('spm_hmm_forward_backward:numerical','Zero probability path (underflow in transitions).');
 end
 
 %-Backward pass, and transitions owned by each chunk

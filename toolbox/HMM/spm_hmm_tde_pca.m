@@ -122,6 +122,7 @@ R.nseg = R0.nseg;
 R.T    = T;
 R.D    = npca;
 R.read = @(i,lo,hi) ((embed(i,lo,hi) - mu)*W - gmu(group(i),:))./gsd(group(i),:);
+R.inmemory = isfield(R0,'inmemory') && R0.inmemory;   % decides parallel use
 
 info.lags        = lags;
 info.offset      = -min(lags);

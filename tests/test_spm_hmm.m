@@ -1293,6 +1293,43 @@ function test_state_plots(testCase)
     testCase.verifyEqual(q,e,'AbsTol',1e-12);
 end
 
+function test_review_edge_cases(testCase)
+    testCase.addTeardown(@close,'all');
+    rs = RandStream('mt19937ar','Seed',22);
+    % an embedded reader of data in memory is flagged as in memory
+    R = spm_hmm_tde_pca({randn(rs,300,3)},struct('lags',-2:2,'npca',4));
+    testCase.verifyTrue(R.inmemory);
+    % non-double input and NaN emissions, with either recursion
+    lpi = log([.5;.5]); lA = log([.9 .1; .1 .9]); lb = randn(rs,6,2);
+    g = spm_hmm_forward_backward(lpi,lA,single(lb));
+    testCase.verifyEqual(size(g),[6 2]);
+    lb(2,1) = NaN;
+    for m = recursion_methods()
+        testCase.verifyError(@() spm_hmm_forward_backward(lpi,lA,lb,m{1}),...
+            'spm_hmm_forward_backward:invalidInput');
+    end
+    % Xi over an empty range, and invalid ranges, in the compiled recursion
+    if numel(recursion_methods()) == 2
+        fbm = compiled_recursion(testCase);
+        f = @(r) nth_output(@() fbm(lpi,lA,randn(rs,5,2),r),2);
+        testCase.verifyEqual(sum(f([1 0]),'all'),0);
+        testCase.verifyEqual(sum(f([6 5]),'all'),0);
+        testCase.verifyEqual(sum(f([2 5]),'all'),4,'AbsTol',1e-12);
+        testCase.verifyError(@() f([3 -1]),'spm_hmm_forward_backward:invalidInput');
+        testCase.verifyError(@() f([7 5]),'spm_hmm_forward_backward:invalidInput');
+    end
+    % values so small that their squares underflow
+    testCase.verifyError(@() spm_hmm({randn(rs,200,2)*1e-170},struct('K',2,'verbose',false)),...
+        'spm_hmm:invalidInput');
+    % plots of very short ranges and row-vector paths
+    spm_hmm_plot_time_course({[1 2 2 3]},struct('samples',[2 2]));
+    F = spm_hmm_plot_time_course({[1 2 2 3]});
+    testCase.verifyEqual(numel(findobj(F,'Tag','state')),3);
+    testCase.verifyError(@() spm_hmm_plot_time_course({[1 2 2 3]'},struct('samples',[9 10])),...
+        'spm_hmm:invalidInput');
+    spm_hmm_plot_spectra(struct('f',10,'psd',rand(rs,2,2,3,1)));
+end
+
 end % methods (Test)
 end % classdef
 
@@ -1468,6 +1505,24 @@ end
 
 function g = onehot(p,K)
 g = full(sparse(1:numel(p),p,1,numel(p),K));
+end
+
+function f = compiled_recursion(testCase)
+% handle to a copy of the compiled recursion (private/forward_backward_mex),
+% for calling it directly with an xirange
+d = tempname; mkdir(d);
+testCase.addTeardown(@() rmdir(d,'s'));
+copyfile(fullfile(spm('Dir'),'toolbox','HMM','private',['forward_backward_mex.' mexext]),...
+    fullfile(d,['fbm_copy.' mexext]));
+addpath(d); testCase.addTeardown(@() rmpath(d));
+f = @fbm_copy;
+end
+
+function y = nth_output(fn,n)
+% n-th output of a function call
+out = cell(1,n);
+[out{:}] = fn();
+y = out{n};
 end
 
 function m = recursion_methods()

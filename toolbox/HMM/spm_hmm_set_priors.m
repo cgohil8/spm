@@ -48,13 +48,14 @@ if isfield(S,'prior') && ~isempty(S.prior), P = S.prior; else, P = struct(); end
 %--------------------------------------------------------------------------
 % accumulated about the first observed sample c, which avoids cancellation
 % in s2/n - mu.^2 for data with a large offset
-n = 0; s1 = zeros(1,D); s2 = zeros(1,D); s0 = zeros(1,D); c = [];
+n = 0; s1 = zeros(1,D); s2 = zeros(1,D); s0 = zeros(1,D); c = []; amax = zeros(1,D);
 for i = 1:R.nseg
     for lo = 1:1e5:R.T(i)
         y  = R.read(i,lo,min(lo+1e5-1,R.T(i)));
         y  = y(~any(isnan(y),2),:);
         if isempty(y), continue; end
         if isempty(c), c = y(1,:); end
+        amax = max(amax,max(abs(y),[],1));
         n  = n  + size(y,1);
         s0 = s0 + sum(y.^2,1);
         y  = y - c;
@@ -70,7 +71,7 @@ else
     v = s2/n - (s1/n).^2;           % variance
 end
 sd = sqrt(max(v,0));
-if any(~isfinite(v) | sd > 1e100 | (sd > 0 & sd < 1e-100))
+if any(~isfinite(v) | sd > 1e100 | (sd > 0 & sd < 1e-100) | (amax > 0 & amax < 1e-100))
     error('spm_hmm:invalidInput',['The data scale (%s per channel) must lie ' ...
         'between 1e-100 and 1e100; rescale the data.'],mat2str(sd,3));
 end

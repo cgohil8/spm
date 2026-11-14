@@ -53,6 +53,10 @@ fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}) || isempty(S.(fn{i})), S.(fn{i}) = def.(fn{i}); end
 end
+ispath = @(p) isrow(p) && numel(p) > 1 && all(p >= 1 & p == round(p));
+for i = 1:numel(states)                                 % paths as columns
+    if ispath(double(states{i})), states{i} = states{i}(:); end
+end
 if size(states{1},2) == 1                               % state sequences
     K = S.K;
     if isempty(K), K = max(cellfun(@max,states)); end
@@ -71,13 +75,17 @@ for j = 1:ns
     g  = states{i};
     t1 = min(S.samples(2),size(g,1));
     idx = S.samples(1):t1;
+    if isempty(idx)
+        error('spm_hmm:invalidInput','Segment %d has no samples in S.samples.',i);
+    end
     g  = g(idx,:);
     if ~isempty(S.missing), g(S.missing{i}(idx),:) = NaN; end
     if isempty(S.fs), t = idx; else, t = (idx - 1)/S.fs; end
     ax = subplot(ns,1,j);
     h  = area(ax,t,g,'EdgeColor','none');
     for k = 1:K, set(h(k),'FaceColor',col(k,:),'Tag','state'); end
-    xlim(ax,[t(1) t(end)]); ylim(ax,[0 1]);
+    if t(end) > t(1), xlim(ax,[t(1) t(end)]); end
+    ylim(ax,[0 1]);
     ylabel(ax,sprintf('Segment %d',i));
     box(ax,'off');
 end

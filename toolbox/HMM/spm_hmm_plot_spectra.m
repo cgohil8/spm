@@ -66,7 +66,7 @@ for j = 1:numel(S.states)
         'DisplayName',sprintf('State %d',k));
 end
 legend(ax,h,'Location','northeast','Box','off');
-xlim(ax,S.freq);
+if S.freq(2) > S.freq(1), xlim(ax,S.freq); end
 xlabel(ax,'Frequency (Hz)');
 if S.subtractmean, ylabel(ax,'PSD relative to mean (a.u.)'); else, ylabel(ax,'PSD (a.u.)'); end
 box(ax,'off');
