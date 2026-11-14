@@ -825,6 +825,69 @@ function test_meeg_parcellate_and_orthogonalise(testCase)
     testCase.verifyError(@() spm_eeg_hmm_orthogonalise(struct('D',fullfile(Dr))),'spm_hmm:invalidInput');
 end
 
+% -------------------------------------------------------------------------
+% Multitaper spectra
+% -------------------------------------------------------------------------
+function test_multitaper_white_noise_and_sinusoid(testCase)
+    rs = RandStream('mt19937ar','Seed',4);
+    fs = 100; T = 60000; t = (0:T-1)'/fs;
+    y  = [randn(rs,T,1), sqrt(2)*cos(2*pi*12.5*t) + 0.1*randn(rs,T,1)];
+    s  = spm_hmm_multitaper({y},[],struct('fs',fs,'coh',false));
+    testCase.verifyEqual(size(s.psd),[1 1 2 numel(s.f)]);
+    testCase.verifyEqual(s.f(2) - s.f(1),0.5);                       % 2 s windows
+    p = squeeze(s.psd(1,1,1,:));                                     % white: 2/fs
+    testCase.verifyEqual(mean(p(5:end-5)),2/fs,'RelTol',0.02);
+    [~,k] = max(squeeze(s.psd(1,1,2,:)));
+    testCase.verifyEqual(s.f(k),12.5);
+    % the PSD integrates to the variance (one-sided, standardised data)
+    testCase.verifyEqual(sum(p)*(s.f(2)-s.f(1)),1,'RelTol',0.02);
+end
+
+function test_multitaper_coherence_and_states(testCase)
+    rs = RandStream('mt19937ar','Seed',5);
+    fs = 100; T = 40000; t = (0:T-1)'/fs;
+    st = 1 + (mod(floor(t/5),2) == 1);                     % alternate every 5 s
+    x  = randn(rs,T,1);
+    y  = [x, x + 0.5*randn(rs,T,1), randn(rs,T,1)];
+    y(st == 1,1) = y(st == 1,1) + 3*cos(2*pi*10*t(st == 1));
+    a  = full(sparse(1:T,st,1,T,2));
+    s  = spm_hmm_multitaper({y},{a},struct('fs',fs,'freq',[1 40]));
+    c  = squeeze(s.coh(1,2,:,:,:));
+    testCase.verifyEqual(squeeze(c(1,1,:)),ones(numel(s.f),1),'AbsTol',1e-12);
+    testCase.verifyGreaterThan(mean(c(1,2,:)),0.8);                  % shared signal
+    testCase.verifyLessThan(mean(c(1,3,:)),0.2);                     % independent
+    [~,k] = min(abs(s.f - 10));
+    testCase.verifyGreaterThan(s.psd(1,1,1,k),20*s.psd(1,2,1,k));    % 10 Hz in state 1
+    % missing samples: zeroed with compensating scaling
+    ym = y; ym(5001:9000,:) = NaN;
+    s0 = spm_hmm_multitaper({y},[],struct('fs',fs,'coh',false));
+    s1 = spm_hmm_multitaper({ym},[],struct('fs',fs,'coh',false));
+    r  = squeeze(s1.psd(1,1,3,:)./s0.psd(1,1,3,:));
+    testCase.verifyEqual(mean(r),1,'RelTol',0.03);
+    testCase.verifyError(@() spm_hmm_multitaper({y},[],struct('fs',fs,'ntapers',9)),'spm_hmm:invalidInput');
+end
+
+function test_meeg_spectra(testCase)
+    [file,s] = amplitude_states_dataset(testCase);
+    Do  = spm_eeg_hmm_envelope(struct('D',file,'freq',[5 15],'window',5));
+    [HMM,Dst] = spm_eeg_hmm(struct('D',fullfile(Do),'K',3,'lifetime',0.5,...
+        'hmm',struct('verbose',false)));
+    sv = spm_eeg_hmm_spectra(struct('D',file,'HMM',HMM,'freq',[1 40]));
+    sp = spm_eeg_hmm_spectra(struct('D',file,'HMM',HMM,'states',{Dst},'freq',[1 40]));
+    testCase.verifyEqual(size(sv.psd),[1 3 4 numel(sv.f)]);
+    testCase.verifyEqual(sv.chanlabels,{'A','B','C','E'});
+    % 10 Hz power of each channel follows the simulated state amplitudes
+    amp = [3 1 1 2; 1 3 2 1; 1 1 3 3];
+    g = onehot(double(HMM.path{1}),3); ok = ~HMM.missing{1};
+    [~,perm] = state_accuracy({g(ok,:)},{s(ok)});
+    [~,k] = min(abs(sv.f - 10));
+    for spec = {sv, sp}
+        p10 = squeeze(spec{1}.psd(1,perm,:,k));                   % [true state x channel]
+        r = corrcoef(p10(:),amp(:).^2);
+        testCase.verifyGreaterThan(r(1,2),0.95);
+    end
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');

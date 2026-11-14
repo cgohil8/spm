@@ -412,6 +412,28 @@ We implement osl-dynamics' algorithm (`osl_dynamics.data.sign_flipping` and `Dat
   - writes `sf_` copies in which only the selected channels are multiplied by their signs.
 - **Pipeline:** sign flip the parcel data, then `spm_eeg_hmm` with `S.tde`.
 
+## 9e. State spectra (multitaper)
+
+`spm_hmm_multitaper` follows `osl_dynamics.analysis.spectral.multitaper_spectra` (with `keepdims`). For each session:
+
+1. Standardise each channel (population SD).
+2. For each state $k$, multiply the data by $\alpha_k(t)$: state probabilities, or a one-hot Viterbi path.
+3. Zero-pad by $\lfloor w/2\rfloor$ at each end.
+4. Take $\lfloor T/\text{step}\rfloor$ windows of $w$ samples (default $w=2f_s$, step $=w$).
+5. Taper each window with DPSS tapers (time-half-bandwidth 4, 7 tapers, unit energy; `spm_dpss` equals SciPy's to $2\times10^{-15}$) and take the FFT with $n_\text{fft}=w$.
+6. Average $\overline{X_m}X_n$ over tapers and windows, then scale by $2/f_s$ and by $T/\sum_t\alpha_k(t)^2$.
+
+- **Frequencies:** those with $f\ge f_\min$ and $f\le f_\max$.
+- **Coherence:** $|P_{xy}|/\sqrt{P_{xx}P_{yy}}$ (magnitude), with NaN set to 0.
+- **Session weights:** each session's fraction of samples.
+
+**Missing samples.** These are artefacts, and states missing at the edges lost to embedding. Data are standardised over observed samples, then the data and $\alpha$ are set to zero there. $T$ in the scaling includes the missing samples, which exactly compensates for averaging over the zeroed time. osl-dynamics has no missing samples.
+
+`spm_eeg_hmm_spectra` builds the inputs from M/EEG datasets and a model fitted by `spm_eeg_hmm`:
+- the session's good trials are concatenated;
+- states come from the Viterbi paths or from the state-probability datasets;
+- the embedding offset is taken into account.
+
 ## 10. Priors (defaults and rationale)
 
 **Data assumption.** Each channel is standardised per session (z-scored). A single streaming pass over the full dataset
@@ -569,7 +591,19 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | Orthogonalisation of the parcels | zero correlation over good samples ($<10^{-6}$, float32 storage); norms kept; rank deficiency errors |
 | Against `osl_dynamics.meeg.parcellation` (not in CI): `_get_parcel_weights` on a probabilistic atlas with overlaps, a no-variance source and a single-source parcel; `symmetric_orthogonalization` | weights $5\times10^{-15}$; orthogonalised data $4\times10^{-9}$ relative |
 
-The checks in all seven tables are in `tests/test_spm_hmm.m`, except the four marked "not in CI".
+**State spectra:**
+
+| check | result |
+|---|---|
+| Unit-variance white noise | PSD $=2/f_s$ (2%); integrates to the variance |
+| Sinusoid at 12.5 Hz | peak at 12.5 Hz |
+| Coherence: channel with itself; a shared signal; independent noise | 1 exactly; >0.8; <0.2 |
+| States with and without a 10 Hz oscillation (one-hot states) | 10 Hz power >20× higher in the oscillating state |
+| 10% of samples missing | spectrum unchanged (3%) |
+| AE-HMM fit on a dataset, spectra from Viterbi paths and from probability datasets | 10 Hz power per state and channel correlates >0.95 with the simulated amplitude² |
+| Against osl-dynamics `multitaper_spectra` (2 sessions, soft 3-state probabilities, overlapping windows, frequency range; static; not in CI) | PSD $3\times10^{-7}$ relative, coherence $5\times10^{-7}$, static $2\times10^{-7}$ (osl-dynamics computes in single precision); weights exact |
+
+The checks in all eight tables are in `tests/test_spm_hmm.m`, except the five marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -596,6 +630,7 @@ The checks in all seven tables are in `tests/test_spm_hmm.m`, except the four ma
 | §6.2, §6.5, §11 fitting loop, restarts, $F+\log K!$ | `spm_hmm` |
 | §9 decoding, Viterbi | `spm_hmm_decode`, `spm_hmm_viterbi` |
 | §9 summary statistics | `spm_hmm_summary_stats` |
+| §9e state spectra | `spm_hmm_multitaper`, `spm_eeg_hmm_spectra` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
 | §9-pre parcellation, orthogonalisation | `spm_eeg_hmm_parcellate`, `spm_hmm_parcel_weights`, `spm_eeg_hmm_orthogonalise` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |
