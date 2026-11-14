@@ -12,7 +12,8 @@
 %   - two spectral components by non-negative matrix factorisation of the
 %     coherence;
 %   - power maps and coherence networks of each state, and maps of each
-%     state's mean amplitude, relative to the mean over states;
+%     state's mean amplitude, relative to the mean over states; networks
+%     keep the edges with the largest absolute difference from the mean;
 %   - plots of the state time courses, summary statistics, spectra, maps
 %     (cortical surface) and networks (glass brain).
 %
@@ -65,8 +66,8 @@ P    = spm_hmm_power_maps(spec,struct('components',comp));            % [G x C x
 C    = spm_hmm_coherence_networks(spec,struct('components',comp));    % [G x C x K x D x D]
 Pm   = reshape(mean(P,1),size(P,2),K,[]);                            % group mean
 Cm   = reshape(mean(C,1),size(C,2),K,size(C,4),size(C,5));
-O    = struct('percentile',cfg.percentile,'subtractmean',true,'meanweights',fo);
-[Ct,edges] = spm_hmm_threshold_network(Cm,O);
+Cm   = Cm - sum(reshape(fo,1,K).*Cm,2);                              % relative to the mean over states
+[Ct,edges] = spm_hmm_threshold_network(Cm,struct('percentile',cfg.percentile,'absolute',true));
 save(fullfile(cfg.parceldir,'post_hoc_ae.mat'),'spec','comp','P','C','Ct','edges','fo');
 
 %% Plots
@@ -85,7 +86,7 @@ for k = 1:K
     save_fig(spm_hmm_plot_power_map(squeeze(Pm(1,:,:))',cfg.atlas,O),sprintf('power_map_state%d',k));
     O.titles = {sprintf('State %d mean amplitude',k)};
     save_fig(spm_hmm_plot_power_map(HMM.Ep.mu,cfg.atlas,O),sprintf('amplitude_map_state%d',k));
-    On = struct('title',sprintf('State %d coherence (component 1)',k));
+    On = struct('title',sprintf('State %d coherence relative to the mean (component 1)',k));
     save_fig(spm_hmm_plot_network(squeeze(Ct(1,k,:,:)),cfg.atlas,On),sprintf('network_state%d',k));
 end
 fprintf('Figures written to %s\n',figdir);
