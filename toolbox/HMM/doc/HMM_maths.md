@@ -330,6 +330,35 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 - **Lifetime prior:** the sticky-prior lifetime is given in seconds and converted using the sampling rate.
 - **Output datasets:** state probabilities are written to new `meeg` datasets with channels `State1..K` of type 'Other'. Trials that were not modelled are filled with NaN.
 
+## 9-pre. Parcellation and leakage correction
+
+Both follow `osl_dynamics.meeg.parcellation`, which is identical to osl-ephys.
+
+**Parcellation** (`spm_eeg_hmm_parcellate` = `parcellate_lcmv`; weights from `spm_hmm_parcel_weights` = `_get_parcel_weights`):
+- **Inputs:** a DAiSS scalar LCMV beamformer on a grid, with sensor-space filters $F$ (source $i$: `W{i}*U'`), and an atlas sampled at the source positions by nearest neighbour.
+- **Atlas:** a 3D label image becomes one-hot weights over its sorted labels; a 4D image is used as weights.
+- **Source covariance:** $FCF^\top$, with $C$ the biased sensor covariance over good samples of good trials.
+- **PCA weights:** for parcel $p$, with $s$ the atlas weights scaled to a maximum of 1:
+  - take the leading eigenvector $u$ (eigenvalue $d$) of $\mathrm{diag}(s)\,C_p\,\mathrm{diag}(s)$;
+  - the mask $m$ is the sources with $s>0.5$ and non-zero variance;
+  - $V_p = \mathrm{sign}(\overline{u_m})\cdot\frac{\sum|u_m|\sigma_m}{\sum|u_m|}\cdot u\odot s/\sqrt d$.
+  - So each parcel time course is the first principal component of its weighted sources, with standard deviation equal to the $|u|$-weighted mean source SD and a positive mean loading.
+- **Centroid method:** the source nearest the weighted centre.
+- **Applying the filters:** parcel filters $V^\top F$ are applied to every sample, minus the filtered good-sample mean.
+- **Two differences from osl-dynamics:**
+  1. osl-dynamics parcellates MNE's weight-normalised filters. DAiSS's LCMV has unit gain, so `S.weightnorm = 'unit-noise-gain'` (the default) scales each filter to unit norm: the unit-noise-gain beamformer for white sensor noise.
+  2. osl-dynamics includes grid points with no dipole when scaling probabilistic weights, because its grid covers the whole MNI box. DAiSS grids leave those points out, so 4D probabilistic atlases can be scaled slightly differently. Label atlases are unaffected.
+- **Bad samples** are left out of the covariance and mean. They are not zero-filled, and artefact events are kept.
+
+**Symmetric orthogonalisation** (`spm_eeg_hmm_orthogonalise` = `symmetric_orthogonalization(maintain_magnitudes=True)`; Colclough et al. 2015):
+- With $A$ the good samples and $D=\mathrm{diag}(\|a_j\|)$: $AD=USV^\top$, and the output is $UV^\top D = AM$ with $M=DVS^{-1}V^\top D$.
+- $M$ is computed from $A^\top A$, accumulated in blocks; the eigendecomposition of $DA^\top AD$ gives $V$ and $S^2$. This agrees with the SVD route to $4\times10^{-9}$ relative.
+- $M$ is then applied to every sample.
+- Each channel keeps its norm, and the channels have zero inner products over the good samples.
+- Rank-deficient data raise an error.
+
+**Atlases are not shipped with SPM.** MEG parcellations, such as Glasser52 (CC BY 4.0), are in the osl-files repository, `https://github.com/OHBA-analysis/osl-files`, folder `parcellation/`, with labels and coordinates in `docs/parcellations`. They can also be fetched with `osl-dynamics-download-data`. Cite the atlas authors.
+
 ## 9b. Time-delay embedding and PCA (TDE-HMM)
 
 `spm_hmm_tde_pca` wraps any data reader:
@@ -531,7 +560,16 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | M/EEG datasets (extra 'Other' channel, an artefact) | only the selected channels flipped; events kept; `sf_` copies |
 | Against osl-dynamics on the same 5 simulated sessions (not in CI) | covariances $8\times10^{-15}$; same template session; correlations $7\times10^{-16}$; identical flips (up to the irrelevant global sign); `build_template`: same medoid, template $6\times10^{-15}$ |
 
-The checks in all six tables are in `tests/test_spm_hmm.m`, except the three marked "not in CI".
+**Parcellation and orthogonalisation:**
+
+| check | result |
+|---|---|
+| PCA weights: single-source parcel gives that source; identical sources give that source; parcel SD equals the $|u|$-weighted mean source SD; positive mean loading; centroid | exact (to $10^{-10}$ or better) |
+| Synthetic DAiSS structure (8 sources, 2-parcel label atlas, 12 sensors, artefact) | parcels correlate >0.99 with their source signals; demeaned; unmarking the artefact changes the filters |
+| Orthogonalisation of the parcels | zero correlation over good samples ($<10^{-6}$, float32 storage); norms kept; rank deficiency errors |
+| Against `osl_dynamics.meeg.parcellation` (not in CI): `_get_parcel_weights` on a probabilistic atlas with overlaps, a no-variance source and a single-source parcel; `symmetric_orthogonalization` | weights $5\times10^{-15}$; orthogonalised data $4\times10^{-9}$ relative |
+
+The checks in all seven tables are in `tests/test_spm_hmm.m`, except the four marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -559,6 +597,7 @@ The checks in all six tables are in `tests/test_spm_hmm.m`, except the three mar
 | §9 decoding, Viterbi | `spm_hmm_decode`, `spm_hmm_viterbi` |
 | §9 summary statistics | `spm_hmm_summary_stats` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
+| §9-pre parcellation, orthogonalisation | `spm_eeg_hmm_parcellate`, `spm_hmm_parcel_weights`, `spm_eeg_hmm_orthogonalise` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |
 | §9c amplitude envelope | `spm_eeg_hmm_envelope` |
 | §9d sign flipping | `spm_hmm_embedded_cov`, `spm_hmm_find_flips`, `spm_hmm_build_template`, `spm_hmm_sign_flip`, `spm_eeg_hmm_sign_flip` |

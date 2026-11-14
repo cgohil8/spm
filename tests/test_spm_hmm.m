@@ -764,6 +764,67 @@ function test_meeg_sign_flip(testCase)
     testCase.verifyEqual(numel(Dout{2}.events(1)),1);            % artefact kept
 end
 
+% -------------------------------------------------------------------------
+% Parcellation and orthogonalisation
+% -------------------------------------------------------------------------
+function test_parcel_weights_properties(testCase)
+    rs = RandStream('mt19937ar','Seed',3);
+    X  = randn(rs,6,2000); X = X - mean(X,2);
+    C  = X*X'/2000;
+    w  = [1 1 1 0 0 0; 0 0 0 1 0.4 0; 0 0 0 0 0 1]';   % parcel 3: one source
+    V  = spm_hmm_parcel_weights(C,w);
+    Z  = V'*X;
+    testCase.verifyEqual(Z(3,:),X(6,:),'AbsTol',1e-12);          % single source
+    sd = sqrt(diag(C));
+    for p = 1:2                                                  % scale and sign
+        ind = find(w(:,p) > 0); s = w(ind,p)/max(w(ind,p));
+        [U,d] = eig((s*s').*C(ind,ind),'vector'); [~,k] = max(d); u = U(:,k);
+        m = s > 0.5; u = u*sign(mean(u(m)));
+        testCase.verifyEqual(std(Z(p,:),1),sum(abs(u(m)).*sd(ind(m)))/sum(abs(u(m))),'RelTol',1e-12);
+        testCase.verifyGreaterThan(mean(V(ind(m),p)),0);
+    end
+    % identical sources: the parcel time course is that source
+    X2 = repmat(X(1,:),3,1); C2 = X2*X2'/2000;
+    V2 = spm_hmm_parcel_weights(C2,[1 1 1]');
+    testCase.verifyEqual(V2'*X2,X(1,:),'AbsTol',1e-10);
+    % centroid
+    pos = [0 0 0; 10 0 0; 20 0 0; 0 30 0; 0 40 0; 0 90 0];
+    Vc  = spm_hmm_parcel_weights(C,w,'centroid',pos);
+    testCase.verifyEqual(find(Vc(:,1))',2);
+    testCase.verifyError(@() spm_hmm_parcel_weights(C,[w zeros(6,1)]),'spm_hmm:invalidInput');
+end
+
+function test_meeg_parcellate_and_orthogonalise(testCase)
+    [BF,atlas,s] = synthetic_beamformer(testCase);
+    [Dp,info] = spm_eeg_hmm_parcellate(struct('BF',BF,'atlas',atlas,'weightnorm','none'));
+    testCase.verifyEqual(Dp.chanlabels,{'parcel001','parcel002'});
+    testCase.verifyEqual(size(info.filters),[2 12]);
+    Z = Dp(:,:,1);
+    good = true(1,size(Z,2)); good(1001:1100) = false;         % artefact (bad)
+    for p = 1:2                                                 % parcel = its signal
+        r = corrcoef(Z(p,good),s(p,good));
+        testCase.verifyGreaterThan(r(1,2),0.99);
+    end
+    testCase.verifyEqual(mean(Z(:,good),2),[0; 0],'AbsTol',1e-4);   % demeaned
+    % marked artefacts are left out of the covariance: unmarking the
+    % artefact changes the filters
+    D = spm_eeg_load(BF.data.D);
+    D = events(D,1,struct([]));  save(D);
+    [~,info2] = spm_eeg_hmm_parcellate(struct('BF',BF,'atlas',atlas,'weightnorm','none','prefix','p2_'));
+    testCase.verifyGreaterThan(max(abs(info2.filters(:) - info.filters(:)))/max(abs(info.filters(:))),0.01);
+    % orthogonalisation: uncorrelated over good samples, norms kept
+    Do = spm_eeg_hmm_orthogonalise(struct('D',fullfile(Dp)));
+    O  = Do(:,:,1);
+    G  = O(:,good)*O(:,good)';
+    testCase.verifyLessThan(abs(G(1,2))/sqrt(G(1,1)*G(2,2)),1e-6);
+    testCase.verifyEqual(sqrt(diag(G)),sqrt(sum(Z(:,good).^2,2)),'RelTol',1e-6);
+    testCase.verifyEqual(spm_file(fullfile(Do),'filename'),'orth_parc_sens.mat');
+    % rank deficiency is an error
+    Dr = clone(Dp,spm_file(fnamedat(Dp),'path','','prefix','r_'),[2 Dp.nsamples 1]);
+    Dr(:,:,1) = [Z(1,:); 2*Z(1,:)]; Dr = chantype(Dr,1:2,'LFP'); save(Dr);
+    testCase.verifyError(@() spm_eeg_hmm_orthogonalise(struct('D',fullfile(Dr))),'spm_hmm:invalidInput');
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
@@ -877,6 +938,48 @@ for g = 1:G
     for t = 2:T, y(t,:) = y(t-1,:)*A' + e(t,:); end
     Y{g} = y.*truth(g,:);
 end
+end
+
+function [BF,atlas,s] = synthetic_beamformer(testCase)
+% 8 sources on an 8 mm MNI grid in two parcels (label atlas), 12 sensors,
+% sensor data y = G*x, x = parcel signal + small noise; the beamformer
+% filters are pinv(G), so the sources are recovered exactly. Samples
+% 1001-1100 carry a large artefact marked by an artefact event.
+dd = tempname; mkdir(dd);
+testCase.addTeardown(@rmdir,dd,'s');
+rs = RandStream('mt19937ar','Seed',12);
+[gx,gy,gz] = ndgrid([-8 0],[-8 0],[0 8]);
+pos = [gx(:) gy(:) gz(:)];                       % 8 sources
+lab = [1 1 1 1 2 2 2 2]';
+% label atlas covering the sources: 8 mm voxels, origin at (-16,-16,-8)
+V.fname = fullfile(dd,'atlas.nii'); V.dim = [4 4 4]; V.dt = [spm_type('uint8') 0];
+V.mat = [8 0 0 -24; 0 8 0 -24; 0 0 8 -16; 0 0 0 1];   % voxel 1 at -16 mm
+Y = zeros(V.dim);
+vox = round([pos ones(8,1)]/V.mat');
+for i = 1:8, Y(vox(i,1),vox(i,2),vox(i,3)) = lab(i); end
+spm_write_vol(V,Y);
+atlas = V.fname;
+T = 3000;
+s = randn(rs,2,T);
+x = s(lab,:) + 0.1*randn(rs,8,T);
+G = randn(rs,12,8);
+y = G*x;
+y(:,1001:1100) = y(:,1001:1100) + 50*randn(rs,12,100);
+D = meeg(12,T,1);
+D = fname(D,'sens.mat'); D = path(D,dd); D = blank(D);
+D(:,:,1) = y;
+labels = arrayfun(@(i) sprintf('MEG%02d',i),1:12,'UniformOutput',false);
+D = chanlabels(D,1:12,labels); D = chantype(D,1:12,'MEG');
+D = fsample(D,200); D = type(D,'continuous');
+D = events(D,1,struct('type','artefact_x','value','all','time',5,'duration',0.495,'offset',0));
+save(D);
+F = pinv(G);
+BF.data.D = fullfile(D);
+BF.data.transforms.toMNI = eye(4);
+BF.sources.pos = pos;
+BF.inverse.MEG.W = mat2cell(F,ones(8,1),12)';
+BF.inverse.MEG.channels = labels;
+BF.features.MEG.U = eye(12);
 end
 
 function [Y,s] = ar_states_problem()

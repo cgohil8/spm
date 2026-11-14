@@ -8,6 +8,9 @@
 %   spm_eeg_hmm              - fit the model to M/EEG datasets
 %   spm_hmm_meeg_reader      - read M/EEG datasets from disk as segments
 %   spm_hmm_tde_pca          - time-delay embedding + PCA (as a reader)
+%   spm_eeg_hmm_parcellate   - parcel time courses from a DAiSS beamformer
+%   spm_eeg_hmm_orthogonalise - symmetric orthogonalisation (leakage)
+%   spm_hmm_parcel_weights   - PCA/centroid weights combining sources
 %   spm_eeg_hmm_envelope     - amplitude envelope datasets (AE-HMM)
 %   spm_eeg_hmm_sign_flip    - align channel signs across M/EEG datasets
 %   spm_hmm_sign_flip        - align channel signs across sessions
