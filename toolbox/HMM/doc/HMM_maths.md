@@ -344,6 +344,18 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 - **Writing results.** `spm_eeg_hmm` writes the state probabilities back at the original samples. The $o$ samples at each end of a segment are NaN.
 - **Caveat.** Consecutive embedded rows share most of their samples, so the model's assumption that observations are conditionally independent is violated more strongly than for raw data. As with HMM-MAR and osl-dynamics, F is then over-confident in absolute terms. Comparisons of F between models fitted to the same embedded data remain the intended use.
 
+## 9c. Amplitude envelope (AE-HMM)
+
+`spm_eeg_hmm_envelope` writes a new dataset holding the envelopes of the selected channels. For each trial (or the whole recording) and channel, it follows osl-dynamics' `filter` → `amplitude_envelope` → `moving_average`:
+
+1. **Filter:** a zero-phase Butterworth band-pass of order 5, run in two passes, as `spm_eeg_filter` does. Its interior output is identical to SciPy's `butter` + `filtfilt`; the two pad the ends differently.
+2. **Envelope:** $|\mathrm{hilbert}(x)|$, computed with the FFT. Like SciPy's, it spreads the transients at the ends of the record: in the test, the envelope of a constant-amplitude sinusoid is off by 1.6% at 2 s from the ends and by 0.03% at the centre.
+3. **Moving average:** a centred moving average over an odd window. Only samples where the full window fits are kept. osl-dynamics trims the rest; we set them to NaN so the output stays aligned with the original samples.
+
+**Bad samples.** As in osl-dynamics, steps 1–3 run straight through bad samples. Artefact events and bad trials are copied to the new dataset, so `spm_eeg_hmm` still treats the original bad samples, and the NaN edges, as missing.
+
+**Fitting.** `spm_eeg_hmm` on the envelope dataset standardises each channel per dataset and fits states with learned means and full covariances, as osl-dynamics does for the AE-HMM.
+
 ## 10. Priors (defaults and rationale)
 
 **Data assumption.** Each channel is standardised per session (z-scored). A single streaming pass over the full dataset
@@ -471,7 +483,16 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | `bestof`: F is the maximum over fits; the first fit equals a plain fit with the same seed | exact |
 | Batch job through `spm_jobman` (TDE, two `meeg` datasets) | model file saved; zero mean by default; >90% decoded correctly; embedding edges NaN; probabilities sum to 1 |
 
-The checks in all four tables are in `tests/test_spm_hmm.m`, except the two marked "not in CI".
+**Amplitude envelope:**
+
+| check | result |
+|---|---|
+| Envelope dataset against a manual filter → `abs(spm_hilbert)` → `movmean` (valid part) | agree to $10^{-5}$ relative (data stored as float32); edge NaNs and the artefact are read as missing |
+| Constant-amplitude sinusoids (amplitudes 3 and 0.5, one with a DC offset), centre of the record | envelope equal to the amplitude to 0.1% |
+| Epoched data, channel selection, prefix | edges NaN per trial; bad trial kept; only the selected channels written |
+| States that differ only in 10 Hz amplitude: envelope, then `spm_eeg_hmm` with learned means | >90% of samples decoded correctly |
+
+The checks in all five tables are in `tests/test_spm_hmm.m`, except the two marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -500,6 +521,7 @@ The checks in all four tables are in `tests/test_spm_hmm.m`, except the two mark
 | §9 summary statistics | `spm_hmm_summary_stats` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |
+| §9c amplitude envelope | `spm_eeg_hmm_envelope` |
 | §11a several complete fits | `spm_hmm` (`S.bestof`) |
 | batch interface | `tbx_cfg_hmm` (SPM > Tools > HMM) |
 | all data access (memory or disk) | `private/data_reader` |

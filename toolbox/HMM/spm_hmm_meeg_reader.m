@@ -15,7 +15,9 @@ function [R,info] = spm_hmm_meeg_reader(D,S)
 % R             - data reader for spm_hmm and related functions:
 %                 each segment is one good trial (continuous data: one
 %                 segment per dataset). Bad samples (artefact events, as in
-%                 meeg/badsamples) are returned as NaN rows, i.e. missing.
+%                 meeg/badsamples) and samples stored as NaN (e.g. the
+%                 edges left by spm_eeg_hmm_envelope) are returned as NaN
+%                 rows, i.e. missing.
 % info          - .files      dataset file names
 %                 .fsample    sampling frequency (Hz)
 %                 .chanlabels selected channel labels
@@ -84,7 +86,7 @@ for f = 1:nf
     for t = tr
         seg_file(end+1,1)  = f; %#ok<AGROW>
         seg_trial(end+1,1) = t; %#ok<AGROW>
-        bad{end+1,1}       = bad_samples(D{f},chanind{f},t); %#ok<AGROW>
+        bad{end+1,1}       = meeg_bad_samples(D{f},chanind{f},t); %#ok<AGROW>
     end
 end
 if isempty(seg_file), error('spm_hmm:invalidInput','No good trials selected.'); end
@@ -101,7 +103,7 @@ if S.standardise
             for lo = 1:1e5:T(i)
                 hi = min(lo+1e5-1,T(i));
                 y  = raw_read(D{f},chanind{f},seg_trial(i),lo,hi);
-                y  = y(~bad{i}(lo:hi),:);
+                y  = y(~bad{i}(lo:hi) & ~any(isnan(y),2),:);
                 n  = n + size(y,1); s1 = s1 + sum(y,1); s2 = s2 + sum(y.^2,1);
             end
         end
@@ -139,14 +141,3 @@ y(bad(lo:hi),:) = NaN;
 %==========================================================================
 function y = raw_read(D,chanind,trial,lo,hi)
 y = double(D(chanind,lo:hi,trial))';
-
-%==========================================================================
-function b = bad_samples(D,chanind,trial)
-% a sample is missing if any selected channel is bad at that sample
-ev = D.events(trial);
-if iscell(ev), ev = ev{1}; end
-if isempty(ev) || ~any(strncmp('artefact',{ev.type},8))
-    b = false(D.nsamples,1);
-else
-    b = any(D.badsamples(chanind,':',trial),1)';
-end

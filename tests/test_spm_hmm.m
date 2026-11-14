@@ -12,6 +12,9 @@ classdef test_spm_hmm < matlab.unittest.TestCase
 methods (TestClassSetup)
 function add_toolbox_to_path(testCase)
     spm('defaults','eeg');
+    if ~exist('cfg_getfile','file')            % used by spm_eeg_load
+        addpath(fullfile(spm('Dir'),'matlabbatch'));
+    end
     p = fullfile(spm('Dir'),'toolbox','HMM');
     addpath(p);
     testCase.addTeardown(@rmpath,p);
@@ -581,6 +584,71 @@ function test_batch_interface(testCase)
     testCase.verifyEqual(sum(G(:,4:end-3),1),ones(1,size(G,2)-6),'AbsTol',1e-5);
 end
 
+% -------------------------------------------------------------------------
+% Amplitude envelope (AE-HMM)
+% -------------------------------------------------------------------------
+function test_envelope_matches_manual_computation(testCase)
+    files = make_meeg_datasets(testCase,'continuous');
+    D  = spm_eeg_load(files{1});
+    Do = spm_eeg_hmm_envelope(struct('D',files{1},'freq',[8 30],'window',5));
+    testCase.verifyEqual(Do.chanlabels,{'P1','P2','P3','P4'});          % TRIG dropped
+    testCase.verifyEqual(Do.chantype,repmat({'LFP'},1,4));
+    testCase.verifyEqual(size(Do),[4 3000 1]);
+    testCase.verifyEqual(numel(Do.events(1)),1);                           % artefact kept
+    x  = double(D(1:4,:,1));
+    x  = ft_preproc_bandpassfilter(x,200,[8 30],5,'but','twopass','reduce');
+    e  = abs(spm_hilbert(x'));                                             % [samples x channels]
+    m  = movmean(e,5,1,'Endpoints','discard');
+    y  = Do(:,:,1)';
+    testCase.verifyTrue(all(isnan(reshape(y([1 2 end-1 end],:),[],1))));
+    testCase.verifyEqual(y(3:end-2,:),m,'RelTol',1e-5);                    % float32
+    % the reader treats the NaN edges and the artefact as missing
+    R = spm_hmm_meeg_reader({fullfile(Do)});
+    y = R.read(1,1,3000);
+    testCase.verifyEqual(find(any(isnan(y),2))',[1 2 401:451 2999 3000]);
+end
+
+function test_envelope_of_sinusoid(testCase)
+    dd = tempname; mkdir(dd);
+    testCase.addTeardown(@rmdir,dd,'s');
+    fs = 250; t = (0:4999)/fs;
+    D  = meeg(2,numel(t),1);
+    D  = fname(D,'sin.mat'); D = path(D,dd); D = blank(D);
+    D(:,:,1) = [3*cos(2*pi*12*t); 0.5*cos(2*pi*20*t + 1) + 2];             % offset removed by filter
+    D  = chanlabels(D,1:2,{'A','B'}); D = chantype(D,1:2,'LFP');
+    D  = fsample(D,fs); D = type(D,'continuous'); save(D);
+    Do = spm_eeg_hmm_envelope(struct('D',fullfile(D),'freq',[5 40]));
+    % the FFT-based Hilbert transform spreads the filter transients at the
+    % ends of the record (about 2% at 2 s, 0.03% at the centre here)
+    e  = Do(:,2250:2750,1);
+    testCase.verifyEqual(e(1,:),3*ones(1,501),'RelTol',1e-3);
+    testCase.verifyEqual(e(2,:),0.5*ones(1,501),'RelTol',1e-3);
+end
+
+function test_envelope_epoched_and_options(testCase)
+    files = make_meeg_datasets(testCase,'epoched');
+    Do = spm_eeg_hmm_envelope(struct('D',{files},'window',7,'channels',{{'P2','P3'}},'prefix','ae_'));
+    testCase.verifyEqual(numel(Do),2);
+    testCase.verifyEqual(Do{1}.chanlabels,{'P2','P3'});
+    testCase.verifyEqual(Do{1}.badtrials,3);                               % bad trial kept
+    testCase.verifyEqual(spm_file(fullfile(Do{2}),'filename'),'ae_epoched2.mat');
+    y = Do{1}(:,:,5);
+    testCase.verifyEqual(find(isnan(y(1,:))),[1:3 298:300]);              % per-trial edges
+    testCase.verifyError(@() spm_eeg_hmm_envelope(struct('D',files{1},'window',4)),'spm_hmm:invalidInput');
+end
+
+function test_ae_hmm_recovers_amplitude_states(testCase)
+    % states differ only in the 10 Hz oscillation amplitude of each channel
+    [file,s] = amplitude_states_dataset(testCase);
+    Do  = spm_eeg_hmm_envelope(struct('D',file,'freq',[5 15],'window',5));
+    HMM = spm_eeg_hmm(struct('D',fullfile(Do),'K',3,'lifetime',0.5,'write',false,...
+        'hmm',struct('verbose',false)));
+    testCase.verifyFalse(HMM.zeromean);
+    g  = onehot(double(HMM.path{1}),3);
+    ok = ~HMM.missing{1};
+    testCase.verifyGreaterThan(state_accuracy({g(ok,:)},{s(ok)}),0.9);
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
@@ -649,6 +717,30 @@ for f = 1:2
     save(D);
     files{f} = fullfile(D);
 end
+end
+
+function [file,s] = amplitude_states_dataset(testCase)
+% One continuous dataset, 4 channels, 3 states with lifetime 100 samples;
+% channel d carries a 10 Hz oscillation of amplitude amp(state,d) plus
+% white noise
+dd = tempname; mkdir(dd);
+testCase.addTeardown(@rmdir,dd,'s');
+rs = RandStream('mt19937ar','Seed',8);
+K = 3; fs = 200; T = 8000; L = 100;
+A  = (1-1/L)*eye(K) + (1/L)/(K-1)*(1 - eye(K));
+cA = cumsum(A,2);
+s = zeros(T,1); s(1) = 1;
+for t = 2:T, s(t) = find(rand(rs) < cA(s(t-1),:),1); end
+amp = [3 1 1 2; 1 3 2 1; 1 1 3 3];
+ph  = 2*pi*rand(rs,1,4);
+tt  = (0:T-1)'/fs;
+x   = amp(s,:).*cos(2*pi*10*tt + ph) + 0.3*randn(rs,T,4);
+D = meeg(4,T,1);
+D = fname(D,'amp.mat'); D = path(D,dd); D = blank(D);
+D(:,:,1) = x';
+D = chanlabels(D,1:4,{'A','B','C','E'}); D = chantype(D,1:4,'LFP');
+D = fsample(D,fs); D = type(D,'continuous'); save(D);
+file = fullfile(D);
 end
 
 function [Y,s] = ar_states_problem()

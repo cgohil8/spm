@@ -8,6 +8,7 @@
 %   spm_eeg_hmm              - fit the model to M/EEG datasets
 %   spm_hmm_meeg_reader      - read M/EEG datasets from disk as segments
 %   spm_hmm_tde_pca          - time-delay embedding + PCA (as a reader)
+%   spm_eeg_hmm_envelope     - amplitude envelope datasets (AE-HMM)
 %   tbx_cfg_hmm              - batch interface (SPM > Tools > HMM)
 %   spm_hmm_decode           - state probabilities and Viterbi paths
 %   spm_hmm_viterbi          - most probable state sequence (mode of q)
