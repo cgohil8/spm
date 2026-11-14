@@ -1251,6 +1251,48 @@ function test_extreme_data_scale(testCase)
         'spm_hmm_forward_backward:numerical');
 end
 
+function test_state_plots(testCase)
+    testCase.addTeardown(@close,'all');
+    rs = RandStream('mt19937ar','Seed',21);
+    G = 3; K = 3; D = 4; f = 1:40;
+    spec.f = f; spec.psd = rand(rs,G,K,D,numel(f));
+    % mean view: one line per state, the mean over channels then sessions
+    F = spm_hmm_plot_spectra(spec);
+    h = flipud(findobj(F,'Tag','psd'));
+    testCase.verifyEqual(numel(h),K);
+    testCase.verifyEqual(numel(findobj(F,'Tag','error')),K);
+    m = reshape(mean(mean(spec.psd,3),1),K,[]);
+    testCase.verifyEqual(h(2).YData,m(2,:),'AbsTol',1e-12);
+    % relative to the mean over states: the state lines sum to zero
+    F = spm_hmm_plot_spectra(spec,struct('subtractmean',true));
+    y = cat(1,findobj(F,'Tag','psd').YData);
+    testCase.verifyLessThan(max(abs(sum(y,1))),1e-12);
+    % time course: stacked probabilities; paths as one-hot, missing blank
+    g = rand(rs,500,K); g = g./sum(g,2);
+    F = spm_hmm_plot_time_course({g},struct('samples',[11 300],'fs',100));
+    a = flipud(findobj(F,'Tag','state'));
+    testCase.verifyEqual(numel(a),K);
+    testCase.verifyEqual(a(2).YData(:),g(11:300,2),'AbsTol',1e-12);
+    testCase.verifyEqual(a(1).XData(1),0.1,'AbsTol',1e-12);
+    H.K = K; H.path = {uint16([1 1 2 3 3 3]')}; H.missing = {logical([0 0 0 1 0 0]')};
+    H.meeg.fsample = 1;
+    F = spm_hmm_plot_time_course(H);
+    a = flipud(findobj(F,'Tag','state'));
+    testCase.verifyEqual(a(3).YData(:),[0 0 0 NaN 1 1]');
+    % summary statistics: four violin panels; quartile lines at numpy's
+    % percentiles; NaN (never visited) left out
+    st = spm_hmm_summary_stats({randi(rs,K,400,1),randi(rs,K,400,1),randi(rs,K,400,1)},K,10);
+    st.mean_lifetime(2,3) = NaN;
+    F = spm_hmm_plot_summary_stats(st);
+    testCase.verifyEqual(numel(findobj(F,'Tag','violin')),4*K);
+    ax = findobj(F,'Tag','Mean lifetime (s)');
+    q  = sort([findobj(ax,'Tag','quartile').UserData]);
+    x1 = st.mean_lifetime(:,1); x3 = st.mean_lifetime([1 3],3); x2 = st.mean_lifetime(:,2);
+    pct = @(x,p) interp1(0:numel(x)-1,sort(x),(numel(x)-1)*p/100);
+    e = sort([pct(x1,[25 50 75]) pct(x2,[25 50 75]) pct(x3,[25 50 75])]);
+    testCase.verifyEqual(q,e,'AbsTol',1e-12);
+end
+
 end % methods (Test)
 end % classdef
 

@@ -32,6 +32,9 @@
 %   spm_hmm_parcel_maps      - parcel values to NIfTI; parcel centres
 %   spm_hmm_plot_power_map   - parcel maps on the cortical surface
 %   spm_hmm_plot_network     - networks on glass-brain views
+%   spm_hmm_plot_spectra     - state power spectra
+%   spm_hmm_plot_time_course - state time courses (probabilities or paths)
+%   spm_hmm_plot_summary_stats - occupancy, lifetimes, intervals, switching
 %   spm_hmm_set_priors       - prior distributions
 %   spm_hmm_infer_states     - E-step: q(states) and sufficient statistics
 %   spm_hmm_infer_states_chunked - E-step on buffered chunks (stochastic)

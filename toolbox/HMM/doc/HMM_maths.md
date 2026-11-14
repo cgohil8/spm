@@ -701,6 +701,7 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | Surface plot: left vertices show parcel 1, right vertices parcel 2; mean subtraction; network plot draws one line per edge per view | exact |
 | Against osl-dynamics with Glasser52 (not in CI): `variance_from_spectra` (range, components, integral), `mean_coherence_from_spectra`, `threshold`, `parcel_vector_to_nifti`, `roi_centers` | $\le3\times10^{-16}$ relative (NIfTI $4\times10^{-8}$, float32 file); same edges; centres identical |
 | Against osl-dynamics `fit_gmm` / `gmm_threshold` with sklearn run to convergence (defaults; the example settings) | percentiles $10^{-14}$; same edges |
+| Violin densities (`spm_hmm_plot_summary_stats`) against scipy `gaussian_kde` (Scott) as used by seaborn, scaled as `density_norm='area'` | $10^{-14}$ |
 
 The checks in all ten tables are in `tests/test_spm_hmm.m`, except the nine marked "not in CI".
 
@@ -732,6 +733,7 @@ The checks in all ten tables are in `tests/test_spm_hmm.m`, except the nine mark
 | §9e state spectra | `spm_hmm_multitaper`, `spm_eeg_hmm_spectra` |
 | §9f spectral components (NMF) | `spm_hmm_nmf`, `spm_hmm_spectral_components` |
 | §9g maps, networks, thresholds, plots | `spm_hmm_power_maps`, `spm_hmm_coherence_networks`, `spm_hmm_threshold_network`, `spm_hmm_gmm_threshold`, `spm_hmm_parcel_maps`, `spm_hmm_plot_power_map`, `spm_hmm_plot_network` |
+| state spectra, time course and summary-statistics plots | `spm_hmm_plot_spectra`, `spm_hmm_plot_time_course`, `spm_hmm_plot_summary_stats`, `private/plot_violins` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
 | §9-pre parcellation, orthogonalisation | `spm_eeg_hmm_parcellate`, `spm_hmm_parcel_weights`, `spm_eeg_hmm_orthogonalise` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |

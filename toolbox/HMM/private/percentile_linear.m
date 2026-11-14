@@ -9,8 +9,11 @@ function q = percentile_linear(x,p)
 
 
 x = sort(x(~isnan(x)));
+x = x(:);
 n = numel(x);
-if n == 0, q = NaN; return; end
-h = (n-1)*p/100;
+if n == 0, q = NaN(size(p)); return; end
+h  = (n-1)*p/100;                       % p may be a vector
 lo = floor(h); hi = min(lo+1,n-1);
-q = x(lo+1) + (h - lo)*(x(hi+1) - x(lo+1));
+xl = reshape(x(lo+1),size(h));
+xh = reshape(x(hi+1),size(h));
+q  = xl + (h - lo).*(xh - xl);
