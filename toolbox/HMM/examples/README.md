@@ -1,17 +1,23 @@
 # HMM toolbox: example pipelines
 
 Example scripts that go from raw MEG recordings to fitted hidden Markov
-models (HMMs) and their plots, for five common analyses:
+models (HMMs) and their plots. The data are prepared by the `prep*`
+scripts, run in order; each `hmm_*` script then fits one kind of HMM and
+computes and plots its state spectra, maps and summary statistics:
 
-| Pipeline | Data modelled | Scripts |
+| Script | Data modelled | Preparation |
 |---|---|---|
-| Parcel-level TDE-HMM | time-delay embedded parcel time courses | `parcel/step1`-`step5`, `step6_hmm_tde`, `step7_post_hoc` |
-| Parcel-level AE-HMM | amplitude envelopes of the parcel time courses | `parcel/step1`-`step4`, `step6_hmm_ae`, `step7_post_hoc` |
-| Sensor-level HMM (PCA) | principal components of the sensors | `parcel/step1`, `sensor/sensor_step2_hmm_pca`, `sensor_step3_post_hoc` |
-| Sensor-level TDE-HMM | PCA, time-delay embedding, PCA of the sensors | `parcel/step1`, `sensor/sensor_step2_hmm_tde`, `sensor_step3_post_hoc` |
-| Single-channel TDE-HMM | time-delay embedding of one parcel | `parcel/step1`-`step4`, `single_channel/single_step5_hmm`, `single_step6_post_hoc` |
+| `hmm_parcel_tde_pca` | parcel time courses, time-delay embedded, then PCA | `prep1`-`prep5` |
+| `hmm_parcel_ae` | amplitude envelopes of the parcel time courses | `prep1`-`prep4` |
+| `hmm_sensor_pca` | principal components of the sensors | `prep1` |
+| `hmm_sensor_pca_tde_pca` | principal components of the sensors, time-delay embedded, then PCA | `prep1` |
+| `hmm_single_channel_tde_pca` | one parcel time course, time-delay embedded, then PCA | `prep1`-`prep4` |
 
-All pipelines fit one group-level model to all sessions.
+The preparation scripts are `prep1_preprocess` (conversion, filtering,
+downsampling, artefacts), `prep2_head_model` (coregistration and forward
+model), `prep3_beamformer` (LCMV), `prep4_parcellate` (parcel time courses
+and leakage correction) and `prep5_sign_flip` (sign alignment across
+sessions). All pipelines fit one group-level model to all sessions.
 
 ## Data
 
@@ -44,22 +50,24 @@ The parcel-level pipelines also need:
    lags, etc.) are defined there too.
 2. Optionally, compile the C forward-backward recursion with
    `spm_hmm_compile` (a C compiler must be set up for MATLAB).
-3. Run the scripts of a pipeline in order, e.g. for the TDE-HMM:
+3. From this folder, run the preparation scripts the pipeline needs, then
+   the pipeline, e.g.:
 
    ```matlab
-   cd(fullfile(spm('Dir'),'toolbox','HMM','examples','parcel'))
-   step1_preprocess; step2_head_model; step3_beamformer; step4_parcellate
-   step5_sign_flip; step6_hmm_tde
-   parcel_version = 'tde'; step7_post_hoc
+   cd(fullfile(spm('Dir'),'toolbox','HMM','examples'))
+   prep1_preprocess; prep2_head_model; prep3_beamformer; prep4_parcellate; prep5_sign_flip
+   hmm_parcel_tde_pca
    ```
 
-   Steps 1-4 are shared: run them once for all parcel-level and
-   single-channel pipelines (step 1 only for the sensor-level ones).
+   The preparation is shared: run it once for all pipelines. Each `hmm_*`
+   script has sections (fit, spectra, plots) that can be run separately
+   once the model is saved.
 
-Outputs are written to `cfg.outdir`: `parcel/` (preprocessed data, head
-models, beamformers, parcel time courses, the parcel-level HMMs and
-`figures_tde/`, `figures_ae/`), `sensor_pca/`, `sensor_tde/` and
-`single_channel/`, each with its HMM (`hmm*.mat`), the state probabilities
+Outputs are written to `cfg.outdir`: `parcel/` (prepared data, head
+models, beamformers and parcel time courses of each session, the
+parcel-level HMMs `hmm_tde_pca.mat` and `hmm_ae.mat`, and `figures_tde_pca/`
+and `figures_ae/`), `sensor_pca/`, `sensor_pca_tde_pca/` and
+`single_channel/`, each with its HMM (`hmm.mat`), the state probabilities
 of each session and a `figures/` folder.
 
 The fitted models hold the state probabilities, Viterbi paths and summary
@@ -69,11 +77,12 @@ state means and covariances.
 ## Other data
 
 - Other MEG systems: change the channel type `MEGGRAD` (CTF axial
-  gradiometers) in `parcel/step1_preprocess.m` and the sensor scripts,
-  the cropping to the recorded samples in step 1 (CTF system clock channel
-  `SCLK01`), and the fiducials (`cfg.fiducials` and
-  `parcel/step2_head_model.m`).
+  gradiometers) in `prep1_preprocess` and the sensor-level scripts, the
+  cropping to the recorded samples in `prep1_preprocess` (CTF system clock
+  channel `SCLK01`), and the fiducials (`cfg.fiducials` and
+  `prep2_head_model`).
 - Structural MRIs or head shapes: specify them in the coregistration of
-  `parcel/step2_head_model.m`.
+  `prep2_head_model`.
 - Epoched data: `spm_eeg_hmm` models each good trial as a segment;
-  step 1 would need to epoch the data instead of keeping it continuous.
+  `prep1_preprocess` would need to epoch the data instead of keeping it
+  continuous.

@@ -1,4 +1,4 @@
-%% Parcel-level HMM, step 2: coregistration and forward model
+%% Preparation 2: coregistration and forward model (source-level pipelines)
 %
 % Each session is coregistered to SPM's template head by matching its three
 % head coils to the template's fiducials (cfg.fiducials: the nasion and the
@@ -13,7 +13,6 @@
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
-addpath(fullfile(fileparts(mfilename('fullpath')),'..'));
 if ~exist('cfg','var'), cfg = hmm_example_config(); end
 
 for s = 1:numel(cfg.sessions)
@@ -39,6 +38,5 @@ for s = 1:numel(cfg.sessions)
     D = spm_eeg_load(h.D{1});
     reg = D.inv{1}.datareg(1);                  % both sets in head space
     err = sqrt(sum((reg.fid_eeg.fid.pnt - reg.fid_mri.fid.pnt).^2,2));
-    fprintf('%s: coil-template distances after coregistration (nas, lpa, rpa): %s mm\n',...
-        id,mat2str(err',2));
+    fprintf('%s: coil-template distances after coregistration (nas, lpa, rpa): %s mm\n',id,mat2str(err',2));
 end

@@ -1,20 +1,19 @@
-%% Parcel-level HMM, step 3: LCMV beamformer (DAiSS)
+%% Preparation 3: LCMV beamformer (DAiSS; source-level pipelines)
 %
 % Sources on an 8 mm grid of the MNI template inside the inner skull; the
 % data covariance over the good samples of the run (DAiSS 'contcov', for
 % continuous data: the mean of each 1 s piece is removed), truncated to its
 % 100 largest components; scalar LCMV filters with each source oriented to
 % maximum power. The filters are
-% normalised (unit noise gain) when the parcels are formed in step 4.
+% normalised (unit noise gain) when the parcels are formed in prep4_parcellate.
 %
-% Output: output/parcel/<session>/BF/BF.mat
+% Output (in cfg.outdir/parcel): <session>/BF/BF.mat
 %__________________________________________________________________________
 
 % Chetan Gohil
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
-addpath(fullfile(fileparts(mfilename('fullpath')),'..'));
 if ~exist('cfg','var'), cfg = hmm_example_config(); end
 
 for s = 1:numel(cfg.sessions)
@@ -48,6 +47,5 @@ for s = 1:numel(cfg.sessions)
     matlabbatch{4}.spm.tools.beamforming.inverse.plugin.lcmv.keeplf = false;
     spm_jobman('run',matlabbatch);
     BF = load(fullfile(bfd,'BF.mat'));
-    fprintf('%s: %d sources, filters for %d channels\n',id,...
-        numel(BF.inverse.MEG.W),size(BF.inverse.MEG.W{1},2));
+    fprintf('%s: %d sources, filters for %d channels\n',id,numel(BF.inverse.MEG.W),size(BF.inverse.MEG.W{1},2));
 end

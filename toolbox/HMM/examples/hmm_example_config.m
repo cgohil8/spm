@@ -39,27 +39,30 @@ cfg.zthreshold = 10;            % artefact threshold: z-score of the signal
                                 % and of its sample-to-sample difference on
                                 % any channel
 
-% Sign flipping: lags of the embedded covariance
+% Sign flipping (prep5_sign_flip): lags of the embedded covariance
 cfg.nembed   = 15;
 
-% AE-HMM: band-pass (Hz) and moving-average window (samples) of the
-% amplitude envelopes
+% AE HMM (hmm_parcel_ae): band-pass (Hz) and moving-average window
+% (samples) of the amplitude envelopes
 cfg.ae_band   = [1 45];
 cfg.ae_window = 25;
 
-% HMM: time-delay embedding (lags in samples) and PCA, number of states
+% HMMs: number of states and prior lifetime; TDE-PCA (hmm_parcel_tde_pca,
+% hmm_sensor_pca_tde_pca): embedding lags (samples) and principal
+% components kept after the embedding
 cfg.lags     = -7:7;
 cfg.npca     = 120;
 cfg.K        = 8;
 cfg.lifetime = 0.1;             % prior expected state lifetime (s)
 cfg.seed     = 1;
 
-% Sensor-level HMM: principal components of the sensors (before any
-% embedding); with embedding, the lags and cfg.npca as above
+% Sensor-level HMMs (hmm_sensor_pca, hmm_sensor_pca_tde_pca): principal
+% components of the sensors, before any embedding
 cfg.sensor_npca = 80;
 
-% Single-channel HMM: parcel index ([] for the most posterior parcel),
-% lags, principal components and number of states
+% Single-channel TDE-PCA HMM (hmm_single_channel_tde_pca): parcel index
+% ([] for the most posterior parcel), lags, principal components and
+% number of states
 cfg.single_parcel = [];
 cfg.single_lags   = -7:7;
 cfg.single_npca   = 10;
@@ -70,7 +73,7 @@ cfg.freq        = [1 45];       % frequency range of the state spectra (Hz)
 cfg.ncomponents = 2;            % NMF spectral components (wideband, high)
 cfg.percentile  = 97;           % network edges kept (percentile)
 
-%-Sessions: every folder in cfg.datadir holding a CTF dataset (.ds)
+% Sessions: every folder in cfg.datadir holding a CTF dataset (.ds)
 d = dir(cfg.datadir);
 d = d([d.isdir] & ~startsWith({d.name},'.'));
 cfg.sessions = struct('id',{},'raw',{});
