@@ -7,6 +7,8 @@ function [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream)
 % 1. Initialise: batch VB (S.ninit restarts, S.initcyc cycles) on a random
 %    subset of chunks treated as separate segments, with the full-data
 %    prior. Its statistics are rescaled to the size of the full dataset.
+%    (With S.init a cell array of state probabilities, the posterior is
+%    initialised from them on all the data instead.)
 % 2. For each mini-batch B of chunks (a random partition every epoch):
 %       t_hat = (M/|B|) * statistics owned by the chunks in B
 %       eta   = (1 - rho_i)*eta + rho_i*(eta_0 + t_hat)
@@ -23,6 +25,15 @@ o      = S.svi;
 chunks = spm_hmm_make_chunks(R.T,o.chunklength,o.buffer);
 M      = size(chunks,1);
 
+%-Initialise from user-supplied state probabilities (all data)
+%--------------------------------------------------------------------------
+if iscell(S.init)
+    gamma = initial_state_probs(R,S,prior,stream);
+    q     = spm_hmm_update_params(sufficient_stats_from_probs(R,gamma,prior),prior);
+    Finit = NaN;
+    if S.verbose, fprintf('spm_hmm: initialised from S.init\n'); end
+else
+
 %-Initialise on a subset of chunks
 %--------------------------------------------------------------------------
 idx  = randperm(stream,M,min(M,o.initchunks));
@@ -38,6 +49,9 @@ Si.keepgamma = false;
 Si.maxcyc   = S.initcyc;
 Si.verbose  = false;
 Si.seed     = randi(stream,2^31-1);
+if isempty(Si.initdiag)                % HMM-MAR default from segment lengths
+    Si.initdiag = min(median(R.T)/10,500);
+end
 Si.prior    = struct('alpha0',prior.alpha0,'beta0',prior.beta0,'m0',prior.m0,...
     'kappa0',prior.kappa0,'nu0',prior.nu0,'W0',prior.W0);
 Hsub  = spm_hmm(Ysub,Si);
@@ -49,6 +63,7 @@ q     = spm_hmm_update_params(st,prior,[],1,M/numel(idx));
 if S.verbose
     fprintf('spm_hmm: initialised on %d of %d chunks, F(subset) = %.6g\n',...
         numel(idx),M,max(Finit));
+end
 end
 
 %-Stochastic updates

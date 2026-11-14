@@ -126,7 +126,7 @@ $$
 where $\bar{\mathbf y}_k=\mathbf S^{(1)}_k/N_k$ and $\bar{\boldsymbol\Sigma}_k=\mathbf S^{(2)}_k/N_k-\bar{\mathbf y}_k\bar{\mathbf y}_k^\top$.
 The last line is algebraically equal to
 $\mathbf W_0^{-1}+\mathbf S^{(2)}_k+\kappa_0\mathbf m_0\mathbf m_0^\top-\kappa_k\mathbf m_k\mathbf m_k^\top$.
-We use the centred form because it is numerically safer.
+The code accumulates the statistics about $\mathbf m_0$ (§8.1), which is equivalent to the second form with $\mathbf m_0=\mathbf 0$ and avoids the cancellation of uncentred moments.
 
 **Zero mean:** $\nu_k=\nu_0+N_k$ and $\mathbf W_k^{-1}=\mathbf W_0^{-1}+\mathbf S^{(2)}_k$.
 
@@ -299,6 +299,8 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 1. Run batch VB (§11) on `initchunks` random chunks, treating each chunk as a separate segment and using the **full-data prior**.
 2. Run one E-step on that subset, then set $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
 3. Scale $\mathbf g^{(1)}$ first by (number of segments)/$M$, because every subset chunk counts as a segment start but the data contain only that many true starts.
+
+The initial $\boldsymbol\Xi$ is slightly low: the transitions into each subset chunk's first sample are missing, so the rescaled total is about $T-M$ instead of $T-$(number of segments), roughly 0.1% at the defaults. The stochastic updates remove this. With `S.init` given as state probabilities, the posterior is instead initialised from them on all the data, and the random paths use `initdiag` computed from the segment lengths, as in batch mode.
 
 ### 8.5 Monitoring and the final free energy
 
@@ -533,7 +535,7 @@ The code reports prior pseudo-counts next to the data counts, so the user can se
 Unlike HMM-MAR, our F is the correct bound (§6), the RNG is local, and the extra option of initialising with a smaller K is not implemented.
 
 - All restarts must compute F on the **same data**: the same subset of sessions when the dataset is large.
-- *(Not yet implemented)* run `best_of` complete fits and keep the one with the highest final exact F (§8.5).
+- `S.bestof` runs several complete fits and keeps the one with the highest final exact F (§11a, §8.5).
 
 **Moving from a subset to SVI on all data.** Initialise $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
 The subset statistics are rescaled to full-data size, so the starting posterior has the right concentration.

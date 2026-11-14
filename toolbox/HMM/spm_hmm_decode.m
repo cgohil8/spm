@@ -2,8 +2,10 @@ function [gamma,path,missing] = spm_hmm_decode(Y,HMM,segments)
 % State probabilities and most probable state sequences for fitted model
 % FORMAT [gamma,path,missing] = spm_hmm_decode(Y,HMM,segments)
 %
-% Y         - data: [T x D] matrix (one segment), cell array of [T_i x D]
-%             segments, or a data reader (see spm_hmm_meeg_reader)
+% Y         - data: [T x D] matrix, cell array of [T_i x D] segments, or a
+%             data reader (see spm_hmm_meeg_reader). A matrix is split into
+%             segments of lengths HMM.options.T if the model was fitted that
+%             way (and they add up to its rows); otherwise it is one segment
 % HMM       - fitted model (see spm_hmm)
 % segments  - indices of the segments to decode                     [all]
 %
@@ -18,7 +20,12 @@ function [gamma,path,missing] = spm_hmm_decode(Y,HMM,segments)
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
-R = data_reader(Y);
+T = [];
+if isnumeric(Y) && isfield(HMM,'options') && isfield(HMM.options,'T') && ...
+        ~isempty(HMM.options.T) && sum(HMM.options.T) == size(Y,1)
+    T = HMM.options.T;
+end
+R = data_reader(Y,T);
 if nargin < 3 || isempty(segments), segments = 1:R.nseg; end
 q     = HMM.q;
 block = 1e5;

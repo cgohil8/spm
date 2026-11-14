@@ -10,8 +10,11 @@ function st = sufficient_stats_from_probs(R,gamma,prior)
 st = empty_sufficient_stats(prior.K,prior.D);
 for i = 1:R.nseg
     g    = gamma{i};
-    y    = R.read(i,1,R.T(i));
-    st   = accumulate_obs_stats(st,y,g,any(isnan(y),2),prior);
+    for lo = 1:1e5:R.T(i)                     % read in blocks
+        hi = min(lo+1e5-1,R.T(i));
+        y  = R.read(i,lo,hi);
+        st = accumulate_obs_stats(st,y,g(lo:hi,:),any(isnan(y),2),prior);
+    end
     st.Xi = st.Xi + g(1:end-1,:)'*g(2:end,:);
     st.g1 = st.g1 + g(1,:);
 end

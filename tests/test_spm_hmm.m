@@ -1000,6 +1000,59 @@ function test_parcel_maps_and_plots(testCase)
     testCase.verifyEqual(numel(findobj(Fn,'Tag','node')),2);
 end
 
+% -------------------------------------------------------------------------
+% Fixes from code review
+% -------------------------------------------------------------------------
+function test_stochastic_with_user_initialisation(testCase)
+    [Y,s] = simulated_problem(false);
+    g = cellfun(@(x) full(sparse(1:numel(x),x,1,numel(x),3)),s,'UniformOutput',false);
+    S = struct('K',3,'init',{g},'verbose',false,'inference','stochastic',...
+        'svi',struct('chunklength',250,'batchsize',4,'nepochs',5));
+    H = spm_hmm(Y,S);
+    testCase.verifyGreaterThan(state_accuracy(H.gamma,s),0.95);
+    H2 = spm_hmm(Y,setfield(S,'bestof',2)); %#ok<SFLD>
+    testCase.verifyTrue(isfinite(H2.F));
+    bad = g; bad{1}(5,:) = 0;                         % a zero row
+    testCase.verifyError(@() spm_hmm(Y,struct('K',3,'init',{bad},'verbose',false)),'spm_hmm:invalidInput');
+end
+
+function test_prior_variance_with_large_offset(testCase)
+    rs = RandStream('mt19937ar','Seed',2);
+    y  = randn(rs,5000,2)*diag([1 2]);
+    p0 = spm_hmm_set_priors({y},struct('K',2,'zeromean',false,'lifetime',10));
+    p1 = spm_hmm_set_priors({y + 1e8},struct('K',2,'zeromean',false,'lifetime',10));
+    testCase.verifyEqual(p1.Sigma0,p0.Sigma0,'RelTol',1e-6);
+    testCase.verifyEqual(p1.m0,p0.m0 + 1e8,'RelTol',1e-12);
+    % checks only apply to defaults that are used
+    p = spm_hmm_set_priors({y},struct('K',3,'zeromean',false,'lifetime',1,...
+        'prior',struct('beta0',ones(3))));
+    testCase.verifyEqual(p.beta0,ones(3));
+    p = spm_hmm_set_priors({[y(:,1) ones(5000,1)]},struct('K',2,'zeromean',false,...
+        'lifetime',10,'prior',struct('Sigma0',eye(2))));
+    testCase.verifyEqual(p.Sigma0,eye(2));
+end
+
+function test_decode_uses_fitted_segments(testCase)
+    Y  = simulated_problem(false);
+    S  = struct('K',3,'verbose',false,'ninit',1,'T',cellfun(@(y) size(y,1),Y));
+    H  = spm_hmm(cat(1,Y{:}),S);
+    g  = spm_hmm_decode(cat(1,Y{:}),H);
+    testCase.verifyEqual(numel(g),2);
+    testCase.verifyEqual(g,H.gamma,'AbsTol',1e-12);
+end
+
+function test_option_validation(testCase)
+    Y = {randn(200,2)};
+    bad = {struct('initcyc',0), struct('maxcyc',0), struct('bestof',1.5), ...
+        struct('lifetime',Inf), struct('svi',struct('buffer',1.5)), ...
+        struct('svi',struct('forget',2)), struct('svi',struct('delay',-1)), ...
+        struct('svi',struct('chunklength',0)), struct('svi',struct('initchunks',0))};
+    for i = 1:numel(bad)
+        S = bad{i}; S.K = 2; S.verbose = false;
+        testCase.verifyError(@() spm_hmm(Y,S),'spm_hmm:invalidInput');
+    end
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');

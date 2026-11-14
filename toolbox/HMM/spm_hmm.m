@@ -40,7 +40,8 @@ function HMM = spm_hmm(Y,S)
 %     .batchsize    chunks per mini-batch                               [32]
 %     .nepochs      passes through the data                             [20]
 %     .delay        step size rho_i = (i + delay)^(-forget)              [1]
-%     .forget       forgetting rate, in (0.5,1]                        [0.9]
+%     .forget       forgetting rate, in (0.5,1] for convergence; 0 gives
+%                   rho = 1 (each update replaces the posterior)       [0.9]
 %     .initchunks   chunks used for the batch initialisations          [64]
 %     .Fevery       exact F every Fevery epochs (0: only at the end)     [0]
 %   Stochastic inference initialises with batch VB on a random subset of
@@ -63,6 +64,7 @@ function HMM = spm_hmm(Y,S)
 %              stochastic: exact F after every S.svi.Fevery epochs
 %   .Finit     final F of each initialisation (on the initialisation
 %              subset for stochastic inference)
+%   .KL        KL divergence of the final posterior from the prior
 %   .rho       stochastic: step size of every mini-batch update
 %   .Fbestof   final F of each complete fit (when S.bestof > 1)
 %
@@ -208,11 +210,30 @@ for i = 1:numel(fn)
         S.svi.(fn{i}) = svi.(fn{i});
     end
 end
-if S.svi.buffer < 1
-    error('spm_hmm:invalidInput','S.svi.buffer must be at least 1.');
-end
-if S.ninit < 1, S.ninit = 1; end
+posint  = @(x) isscalar(x) && x >= 1 && x == round(x);       % positive integer
+posintI = @(x) isscalar(x) && x >= 1 && (x == round(x) || x == Inf);
+check(posint(S.ninit),  'S.ninit must be a positive integer.');
+check(posint(S.initcyc),'S.initcyc must be a positive integer.');
+check(posint(S.maxcyc), 'S.maxcyc must be a positive integer.');
+check(posint(S.bestof), 'S.bestof must be a positive integer.');
+check(isscalar(S.tol) && S.tol >= 0,'S.tol must be non-negative.');
+check(isscalar(S.lifetime) && isfinite(S.lifetime),'S.lifetime must be finite.');
+check(posintI(S.svi.chunklength),'S.svi.chunklength must be a positive integer (or Inf).');
+check(posint(S.svi.buffer),      'S.svi.buffer must be a positive integer.');
+check(posintI(S.svi.batchsize),  'S.svi.batchsize must be a positive integer (or Inf).');
+check(posint(S.svi.nepochs),     'S.svi.nepochs must be a positive integer.');
+check(posintI(S.svi.initchunks), 'S.svi.initchunks must be a positive integer (or Inf).');
+check(isscalar(S.svi.delay) && S.svi.delay >= 0,'S.svi.delay must be non-negative.');
+check(isscalar(S.svi.forget) && S.svi.forget >= 0 && S.svi.forget <= 1,...
+    'S.svi.forget must be in [0,1].');
+check(isscalar(S.svi.Fevery) && S.svi.Fevery >= 0 && S.svi.Fevery == round(S.svi.Fevery),...
+    'S.svi.Fevery must be a non-negative integer.');
 if iscell(S.init), S.ninit = 1; end
+
+
+%==========================================================================
+function check(ok,msg)
+if ~ok, error('spm_hmm:invalidInput',msg); end
 
 
 %==========================================================================

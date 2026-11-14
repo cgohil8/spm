@@ -18,8 +18,10 @@ if iscell(S.init)
         error('spm_hmm:invalidInput','S.init must have one cell per segment.');
     end
     for i = 1:R.nseg
-        if ~isequal(size(gamma{i}),[R.T(i) K]) || any(gamma{i}(:) < 0)
-            error('spm_hmm:invalidInput','S.init{%d} must be a non-negative [T_i x K] matrix.',i);
+        if ~isequal(size(gamma{i}),[R.T(i) K]) || any(gamma{i}(:) < 0) || ...
+                any(~isfinite(gamma{i}(:))) || any(sum(gamma{i},2) <= 0)
+            error('spm_hmm:invalidInput',['S.init{%d} must be a finite, non-negative ' ...
+                '[T_i x K] matrix with positive row sums.'],i);
         end
         gamma{i} = gamma{i}./sum(gamma{i},2);
     end

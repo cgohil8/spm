@@ -43,22 +43,28 @@ if isfield(S,'prior') && ~isempty(S.prior), P = S.prior; else, P = struct(); end
 
 %-Pooled first and second moments of the observed samples
 %--------------------------------------------------------------------------
-n = 0; s1 = zeros(1,D); s2 = zeros(1,D);
+% accumulated about the first observed sample c, which avoids cancellation
+% in s2/n - mu.^2 for data with a large offset
+n = 0; s1 = zeros(1,D); s2 = zeros(1,D); s0 = zeros(1,D); c = [];
 for i = 1:R.nseg
     for lo = 1:1e5:R.T(i)
         y  = R.read(i,lo,min(lo+1e5-1,R.T(i)));
         y  = y(~any(isnan(y),2),:);
+        if isempty(y), continue; end
+        if isempty(c), c = y(1,:); end
         n  = n  + size(y,1);
+        s0 = s0 + sum(y.^2,1);
+        y  = y - c;
         s1 = s1 + sum(y,1);
         s2 = s2 + sum(y.^2,1);
     end
 end
 if n == 0, error('spm_hmm:invalidInput','All samples are missing.'); end
-mu = s1/n;
+mu = c + s1/n;
 if zm
-    v = s2/n;                       % second moment about zero
+    v = s0/n;                       % second moment about zero
 else
-    v = s2/n - mu.^2;               % variance
+    v = max(s2/n - (s1/n).^2,0);    % variance
 end
 
 prior.K        = K;
@@ -68,7 +74,7 @@ prior.zeromean = zm;
 %-Initial-state and transition priors
 %--------------------------------------------------------------------------
 prior.alpha0 = get_field(P,'alpha0',ones(1,K));
-if K > 1
+if K > 1 && ~(isfield(P,'beta0') && ~isempty(P.beta0))
     L = S.lifetime;
     if L < K/(K-1)
         error('spm_hmm:invalidInput','S.lifetime must be at least K/(K-1) samples.');
@@ -95,7 +101,7 @@ if isfield(P,'W0') && ~isempty(P.W0)
         prior.Sigma0 = prior.W0inv/(prior.nu0 - D - 1);
     end
 else
-    if any(v <= 0)
+    if ~(isfield(P,'Sigma0') && ~isempty(P.Sigma0)) && any(v <= 0)
         error('spm_hmm:invalidInput','Channel(s) %s have zero variance.',mat2str(find(v <= 0)));
     end
     prior.Sigma0 = get_field(P,'Sigma0',diag(v));
