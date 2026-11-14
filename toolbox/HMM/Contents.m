@@ -25,6 +25,13 @@
 %   spm_eeg_hmm_spectra      - state spectra of M/EEG datasets
 %   spm_hmm_nmf              - non-negative matrix factorisation
 %   spm_hmm_spectral_components - spectral components of coherence (NMF)
+%   spm_hmm_power_maps       - power maps from state spectra
+%   spm_hmm_coherence_networks - coherence networks from state spectra
+%   spm_hmm_threshold_network - keep edges above a percentile
+%   spm_hmm_gmm_threshold    - threshold networks with a Gaussian mixture
+%   spm_hmm_parcel_maps      - parcel values to NIfTI; parcel centres
+%   spm_hmm_plot_power_map   - parcel maps on the cortical surface
+%   spm_hmm_plot_network     - networks on glass-brain views
 %   spm_hmm_set_priors       - prior distributions
 %   spm_hmm_infer_states     - E-step: q(states) and sufficient statistics
 %   spm_hmm_infer_states_chunked - E-step on buffered chunks (stochastic)

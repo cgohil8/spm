@@ -922,6 +922,84 @@ function test_nmf_recovers_planted_factors(testCase)
     testCase.verifyError(@() spm_hmm_nmf(-X,2),'spm_hmm:invalidInput');
 end
 
+% -------------------------------------------------------------------------
+% Power maps, coherence networks, thresholds and plots
+% -------------------------------------------------------------------------
+function test_power_maps_and_coherence_networks(testCase)
+    f = 1:10;
+    psd = zeros(1,2,3,10); psd(1,1,:,:) = repmat(reshape(f,1,1,1,10),[1 1 3 1]); psd(1,2,:,:) = 1;
+    s = struct('f',f,'psd',psd,'coh',repmat(reshape(f/10,1,1,1,1,10),[1 2 3 3 1]));
+    P = spm_hmm_power_maps(s,struct('freq',[3 5]));
+    testCase.verifyEqual(size(P),[1 1 2 3]);
+    testCase.verifyEqual(squeeze(P(1,1,:,1))',[4 1]);                     % mean of 3:5
+    P = spm_hmm_power_maps(s,struct('freq',[3 5],'method','integral'));
+    testCase.verifyEqual(squeeze(P(1,1,:,1))',[12 3]);
+    comp = [f <= 2; f >= 9];
+    P = spm_hmm_power_maps(s,struct('components',comp));
+    testCase.verifyEqual(size(P),[1 2 2 3]);
+    testCase.verifyEqual(P(1,:,1,1),[1.5 9.5]);
+    C = spm_hmm_coherence_networks(s,struct('components',comp));
+    testCase.verifyEqual(size(C),[1 2 2 3 3]);
+    testCase.verifyEqual(C(1,:,1,1,2),[0.15 0.95],'AbsTol',1e-12);
+end
+
+function test_network_thresholds(testCase)
+    rs = RandStream('mt19937ar','Seed',7);
+    D  = 30; ut = triu(true(D),1);
+    c  = 0.2 + 0.02*randn(rs,D); strong = ut & rand(rs,D) > 0.85;
+    c(strong) = 0.6 + 0.02*randn(rs,nnz(strong),1);
+    c  = triu(c,1); c = c + c';
+    [t,e] = spm_hmm_threshold_network(c,struct('percentile',90));
+    x = sort(c(ut)); h = (numel(x)-1)*0.9; l = floor(h);      % numpy 'linear'
+    q = x(l+1) + (h - l)*(x(l+2) - x(l+1));
+    testCase.verifyEqual(e(ut),c(ut) > q);
+    testCase.verifyEqual(t(e),c(e)); testCase.verifyTrue(all(t(~e) == 0));
+    testCase.verifyEqual(e,e');
+    % the Gaussian mixture separates the strong edges. As in osl-dynamics,
+    % the threshold (the weakest 'on' edge) is turned into a rank
+    % percentile and back, which drops that edge itself
+    [~,~,eg] = spm_hmm_gmm_threshold(c,struct());
+    expect = strong; [~,w] = min(c(strong)); sv = find(strong); expect(sv(w)) = false;
+    testCase.verifyEqual(eg(ut),expect(ut));
+    % mean subtraction over states: state 2 = state 1 except one edge
+    c3 = permute(cat(3,c,c),[3 1 2]);
+    c3(2,1,2) = c3(2,1,2) + 1; c3(2,2,1) = c3(2,1,2);
+    [~,e3] = spm_hmm_threshold_network(c3,struct('percentile',99,'subtractmean',true));
+    testCase.verifyEqual(find(squeeze(e3(2,:,:)))',[2 D+1]);   % edge (1,2) only
+    testCase.verifyFalse(any(e3(1,:)));
+end
+
+function test_parcel_maps_and_plots(testCase)
+    dd = tempname; mkdir(dd);
+    testCase.addTeardown(@rmdir,dd,'s');
+    testCase.addTeardown(@close,'all');
+    % two parcels: left and right of the midline, 8 mm grid covering MNI space
+    V.fname = fullfile(dd,'lr.nii'); V.dim = [24 28 24]; V.dt = [spm_type('uint8') 0];
+    V.mat = [8 0 0 -96; 0 8 0 -132; 0 0 8 -78; 0 0 0 1];
+    [i,~,~] = ndgrid(1:24,1:28,1:24);
+    x = 8*i - 96;
+    spm_write_vol(V,1 + (x > 0));
+    [Vm,ctr] = spm_hmm_parcel_maps([2 5; -1 3],V.fname,fullfile(dd,'map.nii'));
+    testCase.verifyEqual(numel(Vm),2);
+    Y = spm_read_vols(Vm);
+    testCase.verifyEqual(unique(Y(:,:,:,1))',[-1 2]);
+    testCase.verifyLessThan(ctr(1,1),0); testCase.verifyGreaterThan(ctr(2,1),0);
+    % surface: left vertices show parcel 1, right vertices parcel 2
+    [F,vals] = spm_hmm_plot_power_map([1; -1],V.fname);
+    M = gifti(fullfile(spm('Dir'),'canonical','cortex_8196.surf.gii'));
+    vx = double(M.vertices(:,1));
+    testCase.verifyEqual(vals(vx < -8),ones(nnz(vx < -8),1));
+    testCase.verifyEqual(vals(vx > 8),-ones(nnz(vx > 8),1));
+    testCase.verifyEqual(numel(findobj(F,'Type','patch')),4);
+    % mean subtraction across maps
+    [~,v2] = spm_hmm_plot_power_map([1 3; 1 3],V.fname,struct('subtractmean',true,'maps',2));
+    testCase.verifyEqual(unique(v2(~isnan(v2)))',1);
+    % network: one line per edge in each view
+    Fn = spm_hmm_plot_network([0 0.5; 0.5 0],V.fname);
+    testCase.verifyEqual(numel(findobj(Fn,'Tag','edge')),2);           % 'x' and 'z'
+    testCase.verifyEqual(numel(findobj(Fn,'Tag','node')),2);
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');

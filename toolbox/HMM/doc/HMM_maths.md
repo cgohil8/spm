@@ -448,6 +448,42 @@ We implement osl-dynamics' algorithm (`osl_dynamics.data.sign_flipping` and `Dat
 
 **One difference from sklearn.** sklearn computes the NNDSVDA starting point from a *randomised* SVD; osl-dynamics passes `random_state=None`, so its components vary slightly between runs. We use the exact truncated SVD, which the randomised SVD approximates.
 
+## 9g. Power maps and coherence networks
+
+These follow `osl_dynamics.analysis.power` and `osl_dynamics.analysis.connectivity`.
+
+**Maps from spectra.**
+- **Power maps** (`spm_hmm_power_maps` = `variance_from_spectra`) and **coherence networks** (`spm_hmm_coherence_networks` = `mean_coherence_from_spectra`) reduce each spectrum over frequency in one of two ways:
+  - with a component $c$: $c^\top P/\sum c$;
+  - with a frequency range: the mean, sum or integral over $f_\min\le f\le f_\max$.
+- Outputs keep every dimension: [sessions × components × states × channels (× channels)].
+
+**Percentile threshold** (`spm_hmm_threshold_network` = `threshold`):
+- optionally subtract the (weighted) mean over states, then optionally take absolute values;
+- keep edges whose value exceeds the given percentile of the off-diagonal values, using NumPy's linear interpolation at index $(n-1)p/100$ (MATLAB's `prctile` differs);
+- symmetric networks use the upper triangle and mirror it;
+- kept edges keep their original values.
+
+**Gaussian-mixture threshold** (`spm_hmm_gmm_threshold` = `fit_gmm` + `gmm_threshold` + `fit_gaussian_mixture`):
+- fit a two-component mixture to the upper-triangle values (optionally mean-subtracted or standardised) and order the components by mean;
+- the threshold is the first value above the 'off' mean that is more probably 'on' (or the `pvalue` / `onecomponentpct` rules);
+- convert it to a rank percentile and apply it as above. As in osl-dynamics, this round trip drops the threshold edge itself.
+
+**Three differences from osl-dynamics:**
+1. **The mixture is fitted to convergence** (tolerance $10^{-10}$). sklearn's default tolerance of $10^{-3}$, which osl-dynamics uses, stopped EM after about 4 iterations in a test, at a mean log-likelihood of 1.15000 against an optimum of 1.15094, with weights 0.76/0.24 against 0.67/0.33. Where it stops depends on its random k-means start. Fitted to convergence, both packages give identical thresholds.
+2. **Mean weights** are also used when applying the threshold.
+3. **With `positiveonly`**, the percentile is taken over all values.
+
+Differences 2 and 3 only affect non-default options; osl-dynamics is internally inconsistent in both. osl-dynamics' `p_value` option currently fails with recent NumPy (`np.arange` with array arguments).
+
+**NIfTI maps** (`spm_hmm_parcel_maps` = `parcel_vector_to_nifti`):
+- each parcel's voxel weights are scaled to a maximum of 1, and each voxel's value is the weighted sum of the parcel values;
+- parcel centres are the weighted mean of each parcel's voxel coordinates (`roi_centers`).
+
+**Plots** (MATLAB `patch` on SPM's canonical cortex mesh, in MNI space):
+- `spm_hmm_plot_power_map`: each vertex takes the value of the nearest parcel voxel. Four views; symmetric cold-hot colour scale at ±max|value|; optional subtraction of the mean over maps, as osl-dynamics' `power.save(subtract_mean=True)`.
+- `spm_hmm_plot_network`: edges between parcel centres over sagittal and axial projections of the mesh, as nilearn's `plot_connectome` with `display_mode='xz'`; symmetric red-blue scale.
+
 ## 10. Priors (defaults and rationale)
 
 **Data assumption.** Each channel is standardised per session (z-scored). A single streaming pass over the full dataset
@@ -626,7 +662,19 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | Against sklearn's coordinate descent from the same NNDSVDA start (not in CI) | $2$–$5\times10^{-14}$ relative |
 | Against osl-dynamics `decompose_spectra` as it runs (randomised SVD, single precision, 5 seeds; not in CI) | $10^{-5}$–$10^{-4}$ relative, varying with the seed |
 
-The checks in all nine tables are in `tests/test_spm_hmm.m`, except the seven marked "not in CI".
+**Power maps, networks, thresholds and plots:**
+
+| check | result |
+|---|---|
+| Maps over a frequency range (mean, integral) and with components, on hand-computed spectra | exact |
+| Percentile threshold against NumPy's linear percentile; mean subtraction over states | exact |
+| Gaussian-mixture threshold on two clusters of edge values | keeps exactly the strong edges (except the threshold edge, as in osl-dynamics) |
+| NIfTI map and parcel centres with a two-parcel (left/right) atlas | exact |
+| Surface plot: left vertices show parcel 1, right vertices parcel 2; mean subtraction; network plot draws one line per edge per view | exact |
+| Against osl-dynamics with Glasser52 (not in CI): `variance_from_spectra` (range, components, integral), `mean_coherence_from_spectra`, `threshold`, `parcel_vector_to_nifti`, `roi_centers` | $\le3\times10^{-16}$ relative (NIfTI $4\times10^{-8}$, float32 file); same edges; centres identical |
+| Against osl-dynamics `fit_gmm` / `gmm_threshold` with sklearn run to convergence (defaults; the example settings) | percentiles $10^{-14}$; same edges |
+
+The checks in all ten tables are in `tests/test_spm_hmm.m`, except the nine marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -655,6 +703,7 @@ The checks in all nine tables are in `tests/test_spm_hmm.m`, except the seven ma
 | §9 summary statistics | `spm_hmm_summary_stats` |
 | §9e state spectra | `spm_hmm_multitaper`, `spm_eeg_hmm_spectra` |
 | §9f spectral components (NMF) | `spm_hmm_nmf`, `spm_hmm_spectral_components` |
+| §9g maps, networks, thresholds, plots | `spm_hmm_power_maps`, `spm_hmm_coherence_networks`, `spm_hmm_threshold_network`, `spm_hmm_gmm_threshold`, `spm_hmm_parcel_maps`, `spm_hmm_plot_power_map`, `spm_hmm_plot_network` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
 | §9-pre parcellation, orthogonalisation | `spm_eeg_hmm_parcellate`, `spm_hmm_parcel_weights`, `spm_eeg_hmm_orthogonalise` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |
