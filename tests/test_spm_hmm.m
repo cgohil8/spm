@@ -649,6 +649,121 @@ function test_ae_hmm_recovers_amplitude_states(testCase)
     testCase.verifyGreaterThan(state_accuracy({g(ok,:)},{s(ok)}),0.9);
 end
 
+% -------------------------------------------------------------------------
+% Sign flipping
+% -------------------------------------------------------------------------
+function test_embedded_cov_matches_explicit_construction(testCase)
+    y = {randn(60,3), randn(40,3)};
+    y{1}(20,:) = NaN;
+    E = 5;
+    C = spm_hmm_embedded_cov(y,struct('nembed',E,'standardise',false));
+    X = [];
+    for i = 1:2
+        n = size(y{i},1) - E + 1;
+        Xi = zeros(n,3*E);
+        for d = 1:3
+            for e = 1:E                       % channel blocks, newest first
+                Xi(:,(d-1)*E + e) = y{i}((1:n) + E - e,d);
+            end
+        end
+        X = [X; Xi(~any(isnan(Xi),2),:)]; %#ok<AGROW>
+    end
+    testCase.verifyEqual(size(X,1),56 + 36 - 5);   % rows using sample 20 dropped
+    testCase.verifyEqual(C,cov(X),'AbsTol',1e-12);
+    Cs = spm_hmm_embedded_cov(y,struct('nembed',E));
+    Xs = (X - mean(X))./std(X,1);                 % population SD, as numpy
+    testCase.verifyEqual(Cs,cov(Xs),'AbsTol',1e-12);
+end
+
+function test_find_flips_reaches_exhaustive_optimum(testCase)
+    [Y,~] = sign_flip_problem(3,7,3000,11);
+    E  = 3;
+    C  = spm_hmm_embedded_cov(Y(2),struct('nembed',E));
+    Ct = spm_hmm_embedded_cov(Y(1),struct('nembed',E));
+    [f,c] = spm_hmm_find_flips(C,Ct,E);
+    N = 7*E; ind = find(triu(true(N),E)); [r,k] = ind2sub([N N],ind);
+    corrf = @(f) corr(C(ind).*f(ceil(r/E))'.*f(ceil(k/E))',Ct(ind));
+    testCase.verifyEqual(c,corrf(f),'AbsTol',1e-12);      % reduced objective
+    best = -Inf;
+    for j = 0:2^7-1
+        best = max(best,corrf(1 - 2*double(dec2bin(j,7) == '1')));
+    end
+    testCase.verifyEqual(c,best,'AbsTol',1e-12);
+end
+
+function test_sign_flip_recovers_planted_flips(testCase)
+    [Y,truth] = sign_flip_problem(5,8,4000,4);
+    [flips,info] = spm_hmm_sign_flip(Y,struct('nembed',5));
+    % correct up to the (arbitrary) convention of the template session:
+    % flips.*truth is the same vector, up to sign, for every session
+    rel = flips.*truth;
+    testCase.verifyEqual(abs(rel*rel(info.template_session,:)'),8*ones(5,1));
+    testCase.verifyGreaterThan(min(info.corr),0.9);
+    % the flipped reader applies the flips
+    y = info.reader.read(3,1,10);
+    testCase.verifyEqual(y,Y{3}(1:10,:).*flips(3,:));
+    % segments of the same session share flips
+    [f2,i2] = spm_hmm_sign_flip([Y(1:2); {Y{2}(1:2000,:)}; {Y{2}(2001:end,:)}],...
+        struct('nembed',5,'group',[1 2 3 3]));
+    testCase.verifyEqual(size(f2),[3 8]);
+    testCase.verifyEqual(numel(i2.covs),3);
+end
+
+function test_sign_flip_two_stage_to_external_template(testCase)
+    % dataset B sets the convention; dataset A is aligned to B's template
+    [YA,tA] = sign_flip_problem(4,8,4000,21,20);     % same process,
+    [YB,tB] = sign_flip_problem(4,8,4000,22,20);     % different signs
+    covsB = cellfun(@(y) spm_hmm_embedded_cov(y,struct('nembed',5)),YB,'UniformOutput',false);
+    tmpl  = spm_hmm_build_template(covsB,5);
+    fB = spm_hmm_sign_flip(YB,struct('nembed',5,'template',tmpl));
+    convB = fB(1,:).*tB(1,:);
+    for twostage = [false true]
+        [fA,info] = spm_hmm_sign_flip(YA,struct('nembed',5,'template',tmpl,'twostage',twostage));
+        rel = fA.*tA;
+        testCase.verifyEqual(abs(rel*convB'),8*ones(4,1));
+        testCase.verifyEqual(isempty(info.template_flips),~twostage);
+    end
+end
+
+function test_sign_flip_frequency_bands(testCase)
+    [Y,truth] = sign_flip_problem(4,6,4000,5);
+    C = spm_hmm_embedded_cov(Y(1),struct('nembed',3,'bands',[1 10; 10 40],'fs',100));
+    testCase.verifyEqual(size(C),[2 18 18]);
+    flips = spm_hmm_sign_flip(Y,struct('nembed',3,'bands',[1 10; 10 40],'fs',100));
+    rel = flips.*truth;
+    testCase.verifyEqual(abs(rel*rel(1,:)'),6*ones(4,1));
+end
+
+function test_meeg_sign_flip(testCase)
+    [Y,truth] = sign_flip_problem(3,4,3000,6);
+    dd = tempname; mkdir(dd);
+    testCase.addTeardown(@rmdir,dd,'s');
+    files = cell(3,1);
+    for f = 1:3
+        D = meeg(5,3000,1);
+        D = fname(D,sprintf('p%d.mat',f)); D = path(D,dd); D = blank(D);
+        D(:,:,1) = [Y{f}'; 1:3000];
+        D = chanlabels(D,1:5,{'A','B','C','E','TRIG'});
+        D = chantype(D,1:4,'LFP'); D = chantype(D,5,'Other');
+        D = fsample(D,100); D = type(D,'continuous');
+        if f == 2
+            D = events(D,1,struct('type','artefact_x','value','B','time',5,'duration',2,'offset',0));
+        end
+        save(D); files{f} = fullfile(D);
+    end
+    [Dout,flips,info] = spm_eeg_hmm_sign_flip(struct('D',{files},'nembed',3));
+    testCase.verifyEqual(info.chanlabels,{'A','B','C','E'});
+    rel = flips.*truth;
+    testCase.verifyEqual(abs(rel*rel(1,:)'),4*ones(3,1));
+    for f = 1:3
+        x = Dout{f}(:,:,1);
+        testCase.verifyEqual(x(1:4,:),double(single(Y{f}'.*flips(f,:)')));
+        testCase.verifyEqual(x(5,:),1:3000);                  % other channel kept
+        testCase.verifyEqual(spm_file(fullfile(Dout{f}),'filename'),sprintf('sf_p%d.mat',f));
+    end
+    testCase.verifyEqual(numel(Dout{2}.events(1)),1);            % artefact kept
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
@@ -741,6 +856,27 @@ D(:,:,1) = x';
 D = chanlabels(D,1:4,{'A','B','C','E'}); D = chantype(D,1:4,'LFP');
 D = fsample(D,fs); D = type(D,'continuous'); save(D);
 file = fullfile(D);
+end
+
+function [Y,truth] = sign_flip_problem(G,D,T,seed,procseed)
+% G sessions of a shared multichannel AR(1) process (correlated channels,
+% set by procseed), each with random channel signs truth(g,:) (session 1
+% unflipped); seed sets the noise and the signs
+if nargin < 5, procseed = seed; end
+rp  = RandStream('mt19937ar','Seed',procseed);
+X   = randn(rp,D);
+Sig = X*X'/D + 0.5*eye(D);
+A   = 0.3*randn(rp,D)/sqrt(D) + 0.5*eye(D);
+rs  = RandStream('mt19937ar','Seed',seed);
+truth = 2*(rand(rs,G,D) > 0.5) - 1;
+truth(1,:) = 1;
+Y = cell(G,1);
+for g = 1:G
+    y = zeros(T,D);
+    e = randn(rs,T,D)*chol(Sig);
+    for t = 2:T, y(t,:) = y(t-1,:)*A' + e(t,:); end
+    Y{g} = y.*truth(g,:);
+end
 end
 
 function [Y,s] = ar_states_problem()

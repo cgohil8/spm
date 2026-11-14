@@ -11,6 +11,7 @@ function [R,info] = spm_hmm_meeg_reader(D,S)
 %                                                            [all trials]
 %   .standardise  z-score each channel within each dataset, using the
 %                 mean and standard deviation of its good samples  [true]
+%   .markbad      return bad samples as NaN rows                   [true]
 %
 % R             - data reader for spm_hmm and related functions:
 %                 each segment is one good trial (continuous data: one
@@ -24,6 +25,7 @@ function [R,info] = spm_hmm_meeg_reader(D,S)
 %                 .seg_file   [nseg x 1] dataset of each segment
 %                 .seg_trial  [nseg x 1] trial of each segment
 %                 .mu, .sd    per-dataset standardisation [n_files x D]
+%                 .bad        {nseg x 1} masks of bad samples
 %
 % Data are read from the memory-mapped data files only when the HMM
 % needs them, a chunk or a block at a time.
@@ -38,6 +40,7 @@ if ~isfield(S,'channels'),    S.channels    = {};                     end
 if ~isfield(S,'chantype'),    S.chantype    = {'MEEG','LFP','SRC'};   end
 if ~isfield(S,'conditions'),  S.conditions  = {};                     end
 if ~isfield(S,'standardise'), S.standardise = true;                   end
+if ~isfield(S,'markbad'),     S.markbad     = true;                   end
 
 %-Load datasets
 %--------------------------------------------------------------------------
@@ -121,8 +124,9 @@ end
 R.nseg = numel(seg_file);
 R.T    = T;
 R.D    = Dch;
+if S.markbad, rbad = bad; else, rbad = cellfun(@(b) false(size(b)),bad,'UniformOutput',false); end
 R.read = @(i,lo,hi) read_segment(D{seg_file(i)},chanind{seg_file(i)},seg_trial(i),...
-    lo,hi,bad{i},mu(seg_file(i),:),sd(seg_file(i),:));
+    lo,hi,rbad{i},mu(seg_file(i),:),sd(seg_file(i),:));
 
 info.files      = cellfun(@fullfile,D,'UniformOutput',false);
 info.fsample    = fs;
@@ -131,6 +135,7 @@ info.seg_file   = seg_file;
 info.seg_trial  = seg_trial;
 info.mu         = mu;
 info.sd         = sd;
+info.bad        = bad;
 
 
 %==========================================================================

@@ -356,6 +356,33 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 
 **Fitting.** `spm_eeg_hmm` on the envelope dataset standardises each channel per dataset and fits states with learned means and full covariances, as osl-dynamics does for the AE-HMM.
 
+## 9d. Sign flipping
+
+Source reconstruction leaves the sign of each parcel arbitrary, so it can differ between sessions. A group TDE-HMM needs consistent signs, because sign changes alter the cross-channel covariance. The AE-HMM does not, because envelopes have no sign.
+
+We implement osl-dynamics' algorithm (`osl_dynamics.data.sign_flipping` and `Data.align_channel_signs`) to the same definitions:
+
+- **Embedded covariance** (`spm_hmm_embedded_cov` = `calc_cov`):
+  - time-delay embed with $E$ (odd) embeddings, in channel-major order with the most recent sample first;
+  - standardise the embedded columns (population SD), then take the covariance normalised by $n-1$;
+  - optionally one covariance per frequency band, stacked;
+  - embedding is done within segments, and rows that use a bad sample are dropped. osl-dynamics instead drops bad segments before embedding.
+- **Objective:** the Pearson correlation between the entries of the flipped session covariance and of the template that lie at least $E$ places above the diagonal, pooled over bands.
+  - This leaves out the within-channel entries, which do not depend on the signs.
+  - For signs $\mathbf f$ it depends only on $P=\sum_{p<q}f_pf_qA_{pq}$ and $Q=\sum_{p<q}f_pf_qB_{pq}$, where $A$ and $B$ are $D\times D$ sums of $c\,t$ and $c$ over each channel pair's entries.
+  - $\mathbf f$ and $-\mathbf f$ give the same value.
+- **Search** (`spm_hmm_find_flips` = `find_flips`): greedy single-channel coordinate ascent.
+  - It starts from all $+1$, from the signs of the two leading eigenvectors of $A$, and from 3 random sign vectors with a fixed seed. The best result is kept.
+  - Our random vectors come from MATLAB's generator, not NumPy's, so they differ from osl-dynamics'.
+- **Template** (`spm_hmm_sign_flip` = `align_channel_signs`):
+  - **default:** the session with the median summed sign-invariant similarity to the other sessions;
+  - or a given template covariance;
+  - or **two-stage** (`spm_hmm_build_template` = `build_template`): start from the medoid, then twice align every session to the template and average. With an external template, the flips $\mathbf g$ aligning the dataset template to it are multiplied into every session's flips.
+- **M/EEG** (`spm_eeg_hmm_sign_flip` = `sign_flip_mne_raw`):
+  - each dataset is one session; band filters run through bad samples;
+  - writes `sf_` copies in which only the selected channels are multiplied by their signs.
+- **Pipeline:** sign flip the parcel data, then `spm_eeg_hmm` with `S.tde`.
+
 ## 10. Priors (defaults and rationale)
 
 **Data assumption.** Each channel is standardised per session (z-scored). A single streaming pass over the full dataset
@@ -492,7 +519,19 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | Epoched data, channel selection, prefix | edges NaN per trial; bad trial kept; only the selected channels written |
 | States that differ only in 10 Hz amplitude: envelope, then `spm_eeg_hmm` with learned means | >90% of samples decoded correctly |
 
-The checks in all five tables are in `tests/test_spm_hmm.m`, except the two marked "not in CI".
+**Sign flipping:**
+
+| check | result |
+|---|---|
+| Embedded covariance against explicit construction (order, standardisation, missing rows, segments) | agree to $10^{-12}$ |
+| Greedy search against exhaustive search over all $2^7$ sign vectors; reduced objective against direct correlation | equal to $10^{-12}$ |
+| 5 sessions with planted signs (median-session template) | all sessions end up with the same convention |
+| Two-stage and plain alignment to a template from another dataset of the same process | sessions take the other dataset's convention |
+| Stacked covariances for 2 frequency bands | shape $2\times N\times N$; signs recovered |
+| M/EEG datasets (extra 'Other' channel, an artefact) | only the selected channels flipped; events kept; `sf_` copies |
+| Against osl-dynamics on the same 5 simulated sessions (not in CI) | covariances $8\times10^{-15}$; same template session; correlations $7\times10^{-16}$; identical flips (up to the irrelevant global sign); `build_template`: same medoid, template $6\times10^{-15}$ |
+
+The checks in all six tables are in `tests/test_spm_hmm.m`, except the three marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -522,6 +561,7 @@ The checks in all five tables are in `tests/test_spm_hmm.m`, except the two mark
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |
 | §9c amplitude envelope | `spm_eeg_hmm_envelope` |
+| §9d sign flipping | `spm_hmm_embedded_cov`, `spm_hmm_find_flips`, `spm_hmm_build_template`, `spm_hmm_sign_flip`, `spm_eeg_hmm_sign_flip` |
 | §11a several complete fits | `spm_hmm` (`S.bestof`) |
 | batch interface | `tbx_cfg_hmm` (SPM > Tools > HMM) |
 | all data access (memory or disk) | `private/data_reader` |

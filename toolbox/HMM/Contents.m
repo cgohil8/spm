@@ -9,6 +9,11 @@
 %   spm_hmm_meeg_reader      - read M/EEG datasets from disk as segments
 %   spm_hmm_tde_pca          - time-delay embedding + PCA (as a reader)
 %   spm_eeg_hmm_envelope     - amplitude envelope datasets (AE-HMM)
+%   spm_eeg_hmm_sign_flip    - align channel signs across M/EEG datasets
+%   spm_hmm_sign_flip        - align channel signs across sessions
+%   spm_hmm_embedded_cov     - embedded covariance used for sign flipping
+%   spm_hmm_find_flips       - signs aligning a covariance to a template
+%   spm_hmm_build_template   - template covariance from many sessions
 %   tbx_cfg_hmm              - batch interface (SPM > Tools > HMM)
 %   spm_hmm_decode           - state probabilities and Viterbi paths
 %   spm_hmm_viterbi          - most probable state sequence (mode of q)
