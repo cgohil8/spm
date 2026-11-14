@@ -434,6 +434,20 @@ We implement osl-dynamics' algorithm (`osl_dynamics.data.sign_flipping` and `Dat
 - states come from the Viterbi paths or from the state-probability datasets;
 - the embedding offset is taken into account.
 
+## 9f. Spectral components (NMF)
+
+`spm_hmm_spectral_components` follows `osl_dynamics.analysis.spectral.decompose_spectra`:
+- **Input:** the coherence of every session, state and channel pair (upper triangle, without the diagonal) forms the rows of $X$ [rows × F].
+- **Factorisation:** $X\approx W\,\text{comp}$, using `spm_hmm_nmf`.
+- **Output:** the components, ordered by their peak frequency and not normalised. Downstream functions divide by their sums.
+
+`spm_hmm_nmf` is sklearn's `non_negative_factorization` with its defaults (Frobenius loss, coordinate descent, no shuffling, tolerance $10^{-4}$, up to 50,000 iterations):
+- **Initialisation:** NNDSVDA, filling entries below $10^{-6}$ with $\bar X$.
+- **Each iteration:** update $W$, then $H$, one component at a time: $w_t\leftarrow\max(w_t-(WH H^\top_{:,t}-XH^\top_{:,t})/(HH^\top)_{tt},0)$.
+- **Stop:** when the summed |projected gradient| relative to the first iteration is at most the tolerance.
+
+**One difference from sklearn.** sklearn computes the NNDSVDA starting point from a *randomised* SVD; osl-dynamics passes `random_state=None`, so its components vary slightly between runs. We use the exact truncated SVD, which the randomised SVD approximates.
+
 ## 10. Priors (defaults and rationale)
 
 **Data assumption.** Each channel is standardised per session (z-scored). A single streaming pass over the full dataset
@@ -603,7 +617,16 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 | AE-HMM fit on a dataset, spectra from Viterbi paths and from probability datasets | 10 Hz power per state and channel correlates >0.95 with the simulated amplitude² |
 | Against osl-dynamics `multitaper_spectra` (2 sessions, soft 3-state probabilities, overlapping windows, frequency range; static; not in CI) | PSD $3\times10^{-7}$ relative, coherence $5\times10^{-7}$, static $2\times10^{-7}$ (osl-dynamics computes in single precision); weights exact |
 
-The checks in all eight tables are in `tests/test_spm_hmm.m`, except the five marked "not in CI".
+**Spectral components (NMF):**
+
+| check | result |
+|---|---|
+| $X=W_0H_0$ with two spectral bumps | relative error $<10^{-3}$; components correlate >0.999 with $H_0$ |
+| Coherence built from two spectral components | components peak at the planted frequencies, in order |
+| Against sklearn's coordinate descent from the same NNDSVDA start (not in CI) | $2$–$5\times10^{-14}$ relative |
+| Against osl-dynamics `decompose_spectra` as it runs (randomised SVD, single precision, 5 seeds; not in CI) | $10^{-5}$–$10^{-4}$ relative, varying with the seed |
+
+The checks in all nine tables are in `tests/test_spm_hmm.m`, except the seven marked "not in CI".
 
 ## 14. Problems found in existing SPM helpers (do not reuse)
 
@@ -631,6 +654,7 @@ The checks in all eight tables are in `tests/test_spm_hmm.m`, except the five ma
 | §9 decoding, Viterbi | `spm_hmm_decode`, `spm_hmm_viterbi` |
 | §9 summary statistics | `spm_hmm_summary_stats` |
 | §9e state spectra | `spm_hmm_multitaper`, `spm_eeg_hmm_spectra` |
+| §9f spectral components (NMF) | `spm_hmm_nmf`, `spm_hmm_spectral_components` |
 | §9a M/EEG | `spm_hmm_meeg_reader`, `spm_eeg_hmm` |
 | §9-pre parcellation, orthogonalisation | `spm_eeg_hmm_parcellate`, `spm_hmm_parcel_weights`, `spm_eeg_hmm_orthogonalise` |
 | §9b time-delay embedding + PCA | `spm_hmm_tde_pca` |

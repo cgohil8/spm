@@ -23,6 +23,8 @@
 %   spm_hmm_summary_stats    - occupancy, lifetimes, intervals, switching
 %   spm_hmm_multitaper       - state multitaper spectra and coherence
 %   spm_eeg_hmm_spectra      - state spectra of M/EEG datasets
+%   spm_hmm_nmf              - non-negative matrix factorisation
+%   spm_hmm_spectral_components - spectral components of coherence (NMF)
 %   spm_hmm_set_priors       - prior distributions
 %   spm_hmm_infer_states     - E-step: q(states) and sufficient statistics
 %   spm_hmm_infer_states_chunked - E-step on buffered chunks (stochastic)

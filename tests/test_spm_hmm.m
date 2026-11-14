@@ -888,6 +888,40 @@ function test_meeg_spectra(testCase)
     end
 end
 
+% -------------------------------------------------------------------------
+% Non-negative matrix factorisation
+% -------------------------------------------------------------------------
+function test_nmf_recovers_planted_factors(testCase)
+    rs = RandStream('mt19937ar','Seed',6);
+    f  = 1:0.5:40;
+    H0 = [exp(-(f-10).^2/8); exp(-(f-25).^2/20)];        % two spectral bumps
+    W0 = rand(rs,300,2);
+    X  = W0*H0;
+    [W,H] = spm_hmm_nmf(X,2);
+    testCase.verifyTrue(all(W(:) >= 0) && all(H(:) >= 0));
+    testCase.verifyLessThan(norm(X - W*H,'fro')/norm(X,'fro'),1e-3);
+    [~,o] = max(H*H0',[],2);                              % match components
+    for c = 1:2
+        r = corrcoef(H(c,:),H0(o(c),:));
+        testCase.verifyGreaterThan(r(1,2),0.999);
+    end
+    % spectral components from coherence: ordered by peak frequency
+    C = zeros(2,3,8,8,numel(f));
+    [i,j] = find(triu(true(8),1));
+    for g = 1:2
+        for k = 1:3
+            for e = 1:numel(i)
+                C(g,k,i(e),j(e),:) = reshape(rand(rs,1,2)*H0,1,1,1,1,[]);
+                C(g,k,j(e),i(e),:) = C(g,k,i(e),j(e),:);
+            end
+        end
+    end
+    comp = spm_hmm_spectral_components(struct('f',f,'coh',C),2);
+    [~,pk] = max(comp,[],2);
+    testCase.verifyEqual(f(pk),[10 25]);
+    testCase.verifyError(@() spm_hmm_nmf(-X,2),'spm_hmm:invalidInput');
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');
