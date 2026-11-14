@@ -40,6 +40,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     if (nrhs < 3 || nrhs > 4) mexErrMsgIdAndTxt("spm_hmm_forward_backward:invalidInput",
         "Three or four inputs are required.");
+    if (nlhs > 3) mexErrMsgIdAndTxt("spm_hmm_forward_backward:invalidInput",
+        "At most three outputs are returned.");
     check_input(prhs[0], "lpi");
     check_input(prhs[1], "lA");
     check_input(prhs[2], "lb");
