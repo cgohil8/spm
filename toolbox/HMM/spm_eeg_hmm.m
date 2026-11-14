@@ -11,6 +11,11 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %   .chantype     channel types, good channels only [{'MEEG','LFP','SRC'}]
 %   .conditions   condition labels of trials to use (epoched)  [all trials]
 %   .standardise  z-score channels within each dataset              [true]
+%   .pca          number of principal components of the channels to keep
+%                 before any embedding (or the fraction of variance), e.g.
+%                 to reduce many sensors; components are z-scored within
+%                 each dataset when .standardise is true and there is no
+%                 embedding                                    [none: []]
 %   .tde          time-delay embedding and PCA (see spm_hmm_tde_pca):
 %                 struct with .lags (e.g. -7:7) and .npca (e.g. 80);
 %                 components are z-scored within each dataset when
@@ -23,6 +28,7 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %
 % HMM           - fitted model (see spm_hmm), plus:
 %   .meeg         reader information (see spm_hmm_meeg_reader)
+%   .pca          PCA information (see spm_hmm_tde_pca), if .pca is used
 %   .tde          embedding/PCA information (see spm_hmm_tde_pca), if used
 %   .stats        summary statistics per dataset, computed from the
 %                 Viterbi paths (see spm_hmm_summary_stats)
@@ -47,7 +53,7 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %--------------------------------------------------------------------------
 if ~isfield(S,'K'), error('spm_hmm:invalidInput','S.K must be specified.'); end
 def = struct('lifetime',0.1,'channels',{{}},'chantype',{{'MEEG','LFP','SRC'}},...
-    'conditions',{{}},'standardise',true,'tde',struct(),'hmm',struct(),...
+    'conditions',{{}},'standardise',true,'pca',[],'tde',struct(),'hmm',struct(),...
     'write',true,'prefix','hmm_');
 fn = fieldnames(def);
 for i = 1:numel(fn)
@@ -69,6 +75,11 @@ usetde = isfield(S.tde,'lags') && ~isempty(S.tde.lags);
 if usetde && ~(isfield(S.tde,'npca') && ~isempty(S.tde.npca))
     error('spm_hmm:invalidInput','S.tde.npca must be given with S.tde.lags.');
 end
+usepca = ~isempty(S.pca);
+if usepca
+    [R,pca] = spm_hmm_tde_pca(R,struct('lags',0,'npca',S.pca,...
+        'group',info.seg_file,'standardise',S.standardise && ~usetde));
+end
 if usetde
     [R,tde] = spm_hmm_tde_pca(R,struct('lags',S.tde.lags,'npca',S.tde.npca,...
         'group',info.seg_file,'standardise',S.standardise));
@@ -82,6 +93,7 @@ O.lifetime  = S.lifetime*info.fsample;
 O.keepgamma = false;
 HMM         = spm_hmm(R,O);
 HMM.meeg    = info;
+if usepca, HMM.pca = pca; end
 if usetde, HMM.tde = tde; end
 
 %-Decode each segment, write state probabilities

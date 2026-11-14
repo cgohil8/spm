@@ -1330,6 +1330,29 @@ function test_review_edge_cases(testCase)
     spm_hmm_plot_spectra(struct('f',10,'psd',rand(rs,2,2,3,1)));
 end
 
+function test_meeg_pca_before_embedding(testCase)
+    % S.pca: PCA of the channels (then z-scored), alone or before embedding
+    files = make_meeg_datasets(testCase,'continuous');
+    O = struct('verbose',false,'ninit',1,'maxcyc',5,'zeromean',true);
+    [H1,D1] = spm_eeg_hmm(struct('D',{files},'K',2,'pca',3,'hmm',O,'prefix','p1_'));
+    testCase.verifyEqual(H1.D,3);
+    testCase.verifyTrue(isfield(H1,'pca') && ~isfield(H1,'tde'));
+    % the same as building the readers by hand
+    [R,info] = spm_hmm_meeg_reader(files);
+    R = spm_hmm_tde_pca(R,struct('lags',0,'npca',3,'group',info.seg_file,'standardise',true));
+    H0 = spm_hmm(R,setfield(setfield(O,'K',2),'lifetime',0.1*info.fsample)); %#ok<SFLD>
+    testCase.verifyEqual(H1.F,H0.F,'RelTol',1e-12);
+    G = D1{1}(:,:,1);
+    testCase.verifyEqual(nnz(isnan(G(1,:))),0);
+    % PCA, embedding, PCA: states written at the embedded samples only
+    [H2,D2] = spm_eeg_hmm(struct('D',{files},'K',2,'pca',3,...
+        'tde',struct('lags',-2:2,'npca',4),'hmm',O,'prefix','p2_'));
+    testCase.verifyEqual(H2.D,4);
+    testCase.verifyEqual(size(H2.tde.W),[15 4]);                       % 5 lags x 3 components
+    G = D2{1}(:,:,1);
+    testCase.verifyEqual(find(isnan(G(1,:))),[1 2 2999 3000]);
+end
+
 end % methods (Test)
 end % classdef
 
