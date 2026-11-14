@@ -35,6 +35,11 @@ function test_python(testCase)
     testCase.verifyNotEmpty(info.source);
     out = evalc('spm_osld_python');
     testCase.verifySubstring(out,'osl-dynamics');
+    % MATLAB's Python interface runs the environment (or its base Python)
+    testCase.verifyEmpty(strfind(out,'could not run'));
+    pe = pyenv;
+    testCase.verifyEqual(char(pe.Status),'Loaded');
+    testCase.verifyEqual(char(pe.ExecutionMode),'OutOfProcess');
 end
 
 function test_subprocess(testCase)

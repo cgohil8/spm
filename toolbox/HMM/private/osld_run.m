@@ -54,16 +54,19 @@ fclose(fid);
 %-Run
 %--------------------------------------------------------------------------
 mode = S.mode;
+site = '';
 if strcmp(mode,'auto')
-    if ismember(S.python,subprocess_only) || ~can_use_pyenv(S.python)
-        mode = 'subprocess';
-    else
-        mode = 'inprocess';
+    mode = 'subprocess';
+    if ~ismember(S.python,subprocess_only)
+        [ok,site] = can_use_pyenv(S.python);
+        if ok, mode = 'inprocess'; end
     end
+elseif strcmp(mode,'inprocess')
+    [~,site] = can_use_pyenv(S.python);
 end
 if strcmp(mode,'inprocess')
     try
-        run_inprocess(job);
+        run_inprocess(job,site);
     catch err
         if strcmp(S.mode,'auto') && ~strcmp(err.identifier,'MATLAB:Python:PyException')
             fprintf(['osld_run: MATLAB''s Python interface could not run %s (%s); ' ...
@@ -139,41 +142,81 @@ out = decode(jsondecode(fileread(fullfile(job,'result.json'))));
 end
 
 
-function ok = can_use_pyenv(python)
-% True if MATLAB's Python interface runs, or can be set to run, this Python
-ok = false;
+function [ok,site] = can_use_pyenv(python)
+% True if MATLAB's Python interface runs, or can be set to run, this Python.
+% If MATLAB cannot use the environment's executable (e.g. older releases on
+% Windows), its base Python is used with the environment's packages (site).
+ok = false; site = '';
 try
     pe = pyenv;
 catch
     return                                              % before R2019b
 end
+base = base_python(python);
+current = char(pe.Executable);
 if strcmp(char(pe.Status),'Loaded')
-    ok = same_file(char(pe.Executable),python);
+    ok = same_file(current,python);
+    if ~ok && same_file(current,base), ok = true; site = site_packages(python); end
     return
 end
-if ~same_file(char(pe.Executable),python)
+if same_file(current,python) || (same_file(current,base) && ~isempty(base))
+    if same_file(current,base), site = site_packages(python); end
+    if ~strcmp(char(pe.ExecutionMode),'OutOfProcess'), pyenv('ExecutionMode','OutOfProcess'); end
+    ok = true;
+    return
+end
+try
+    pyenv('Version',python,'ExecutionMode','OutOfProcess');
+catch
+    if isempty(base), return; end
     try
-        pyenv('Version',python,'ExecutionMode','OutOfProcess');
-        fprintf('MATLAB''s Python (pyenv) is now %s.\n',python);
+        pyenv('Version',base,'ExecutionMode','OutOfProcess');
+        site = site_packages(python);
     catch
         return
     end
-elseif ~strcmp(char(pe.ExecutionMode),'OutOfProcess')
-    pyenv('ExecutionMode','OutOfProcess');
 end
+pe = pyenv;
+fprintf('MATLAB''s Python (pyenv) is now %s.\n',char(pe.Executable));
 ok = true;
 end
 
 
-function run_inprocess(job)
+function base = base_python(python)
+% Executable of the Python a virtual environment was created from ('' if none)
+base = '';
+cfg = fullfile(fileparts(fileparts(python)),'pyvenv.cfg');
+if ~exist(cfg,'file'), return; end
+home = regexp(fileread(cfg),'^home\s*=\s*(.*?)\s*$','tokens','once','lineanchors');
+if isempty(home), return; end
+if ispc, base = fullfile(home{1},'python.exe'); else, base = fullfile(home{1},'python3'); end
+if ~exist(base,'file'), base = ''; end
+end
+
+
+function site = site_packages(python)
+env = fileparts(fileparts(python));
+if ispc
+    site = fullfile(env,'Lib','site-packages');
+else
+    d = dir(fullfile(env,'lib','python*','site-packages'));
+    if isempty(d), site = ''; else, site = fullfile(d(1).folder,d(1).name); end
+end
+end
+
+
+function run_inprocess(job,site)
 setenv('PYTHONNOUSERSITE','1');
 setenv('PYTHONDONTWRITEBYTECODE','1');
+sys = py.importlib.import_module('sys');
+py.setattr(sys,'dont_write_bytecode',true);
+if ~isempty(site), py.site.addsitedir(site); end
 module = osld_paths().module;
-P = py.sys.path;
+P = sys.path;
+while double(P.count('')) > 0, P.remove(''); end   % the current folder could shadow packages
 if ~any(cellfun(@(s) strcmp(char(s),module),cell(P)))
     P.insert(int32(0),module);
 end
-py.setattr(py.sys,'dont_write_bytecode',true);
 py.importlib.import_module('spm_osld');
 py.spm_osld.run(job);
 end
@@ -188,9 +231,7 @@ if ispc
 else
     vars = [vars; {'LD_LIBRARY_PATH',''; 'DYLD_LIBRARY_PATH',''}];
 end
-old = cellfun(@getenv,vars(:,1),'UniformOutput',false);
-for i = 1:size(vars,1), setenv(vars{i,1},vars{i,2}); end
-restore = onCleanup(@() cellfun(@setenv,vars(:,1),old));
+restore = osld_setenv(vars); %#ok<NASGU> restored when cleared
 status = system(cmd,'-echo');
 if status ~= 0
     error('spm_osld:python','The osl-dynamics task failed (see the Python output above).');

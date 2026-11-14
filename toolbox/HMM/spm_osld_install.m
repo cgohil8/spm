@@ -153,9 +153,7 @@ end
 
 
 function run(uv,args,env)
-old = cellfun(@getenv,env(:,1),'UniformOutput',false);
-for i = 1:size(env,1), setenv(env{i,1},env{i,2}); end
-restore = onCleanup(@() cellfun(@setenv,env(:,1),old));
+restore = osld_setenv(env); %#ok<NASGU> restored when cleared
 cmd = sprintf('"%s" %s',uv,args);
 if ispc, cmd = ['call ' cmd]; end    % a command starting with a quote is altered by cmd.exe
 status = system(cmd,'-echo');

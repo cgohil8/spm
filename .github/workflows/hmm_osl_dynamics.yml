@@ -38,12 +38,6 @@ jobs:
         with:
           command: addpath(pwd); addpath(fullfile(pwd,'toolbox','HMM')); info = spm_osld_install(); disp(info); spm_osld_python
 
-      - name: Check MATLAB's Python interface
-        continue-on-error: true
-        uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3.0
-        with:
-          command: s = jsondecode(fileread(fullfile(getenv('HOME'),getenv('USERPROFILE'),'.spm','spm_osld.json'))); disp(s); try, pe = pyenv('Version',s.python,'ExecutionMode','OutOfProcess'); disp(pe); disp(py.sys.version); catch e, disp(getReport(e,'extended')); end; pe = pyenv; disp(pe)
-
       - name: Run the HMM toolbox tests
         uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3.0
         with:
