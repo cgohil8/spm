@@ -3,9 +3,9 @@
 % The sign of each parcel time course is arbitrary after source
 % reconstruction and can differ between sessions. The signs are aligned
 % using the time-delay embedded covariance of each session (cfg.nembed
-% lags): first all sessions to a template built from them, then that group
-% to the canonical HMM template (cfg.template). Without a template, the
-% sessions are aligned to the median session.
+% lags): to the median session or, with a template covariance
+% (cfg.template, e.g. info.template from an earlier study), first all
+% sessions to a template built from them, then that group to cfg.template.
 %
 % Output: output/parcel/<session>/sf_orth_parc_<session>.mat
 %__________________________________________________________________________

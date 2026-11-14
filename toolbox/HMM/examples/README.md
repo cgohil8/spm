@@ -32,11 +32,10 @@ The parcel-level pipelines also need:
 - a parcellation in MNI space, e.g. the Glasser52 atlas
   `atlas-Glasser_nparc-52_space-MNI_res-8x8x8.nii.gz` from
   https://github.com/OHBA-analysis/osl-files (folder `parcellation/`);
-- optionally, a template covariance for sign flipping: `template_cov.npy`
-  of the canonical HMM (https://github.com/OHBA-analysis/Canonical-HMM-Networks)
-  saved as a `.mat` file with variable `template`, e.g. in Python:
-  `scipy.io.savemat('template_cov.mat', {'template': numpy.load('template_cov.npy')})`.
-  Without it, the sessions are aligned to the median session.
+- optionally, a template covariance for sign flipping (a `.mat` file with
+  variable `template`, e.g. `info.template` returned by
+  `spm_eeg_hmm_sign_flip` for an earlier study). Without it, the sessions
+  are aligned to the median session.
 
 ## Running
 

@@ -8,10 +8,9 @@ function cfg = hmm_example_config
 %   cfg.atlas     parcellation in MNI space, e.g. the Glasser52 atlas
 %                 atlas-Glasser_nparc-52_space-MNI_res-8x8x8.nii.gz from
 %                 https://github.com/OHBA-analysis/osl-files (parcellation/)
-%   cfg.template  template covariance for sign flipping, e.g.
-%                 template_cov.npy of the canonical HMM
-%                 (https://github.com/OHBA-analysis/Canonical-HMM-Networks)
-%                 saved as a .mat file with variable 'template'; '' aligns
+%   cfg.template  template covariance for sign flipping (.mat file with
+%                 variable 'template', e.g. info.template returned by
+%                 spm_eeg_hmm_sign_flip for an earlier study); '' aligns
 %                 the sessions to the median session
 %__________________________________________________________________________
 
