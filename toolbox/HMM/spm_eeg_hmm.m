@@ -23,6 +23,11 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %                 zero mean (S.hmm.zeromean = true)          [none: struct()]
 %   .hmm          further options for spm_hmm (e.g. zeromean, inference,
 %                 svi, ninit, seed); S.K and S.lifetime take precedence
+%   .inmemory     hold the prepared data (after any PCA and embedding) in
+%                 memory, unless they need more than half the available
+%                 memory (a message is then printed and they are read
+%                 from disk at every cycle); false: always read from
+%                 disk                                              [true]
 %   .write        write state probabilities to new datasets         [true]
 %   .prefix       prefix of the written datasets                  ['hmm_']
 %
@@ -40,9 +45,9 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 %                 edges by time-delay embedding, are NaN
 %
 % Each good trial is a segment (continuous data: one per dataset). Bad
-% samples are treated as missing data. The data are read from disk as
-% needed; with S.hmm.inference = 'stochastic' only mini-batches of chunks
-% are read at each update.
+% samples are treated as missing data. Data not held in memory are read
+% from disk as needed; with S.hmm.inference = 'stochastic' only
+% mini-batches of chunks are read at each update.
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -54,7 +59,7 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 if ~isfield(S,'K'), error('spm_hmm:invalidInput','S.K must be specified.'); end
 def = struct('lifetime',0.1,'channels',{{}},'chantype',{{'MEEG','LFP','SRC'}},...
     'conditions',{{}},'standardise',true,'pca',[],'tde',struct(),'hmm',struct(),...
-    'write',true,'prefix','hmm_');
+    'write',true,'prefix','hmm_','inmemory',true);
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}), S.(fn{i}) = def.(fn{i}); end
@@ -85,6 +90,13 @@ if usetde
         'group',info.seg_file,'standardise',S.standardise));
     offset  = tde.offset;
     if ~isfield(S.hmm,'zeromean'), S.hmm.zeromean = true; end
+end
+
+if ~(isscalar(S.inmemory) && (islogical(S.inmemory) || isnumeric(S.inmemory)))
+    error('spm_hmm:invalidInput','S.inmemory must be true or false.');
+end
+if S.inmemory
+    R = hold_in_memory(R);
 end
 
 O           = S.hmm;
@@ -134,3 +146,32 @@ end
 %--------------------------------------------------------------------------
 HMM.stats = spm_hmm_summary_stats(cellfun(@double,HMM.path,'UniformOutput',false),...
     S.K,info.fsample,HMM.missing,info.seg_file);
+
+
+%==========================================================================
+function R = hold_in_memory(R)
+% reader of the data held in memory, or R if they do not fit
+need  = 8*sum(R.T)*R.D;
+avail = available_memory;
+if need > avail/2
+    fprintf(['spm_eeg_hmm: the prepared data need %.1f GB and %.1f GB of ' ...
+        'memory is available; reading them from disk at every cycle.\n'],need/2^30,avail/2^30);
+    return
+end
+block = 1e5;
+Y = cell(R.nseg,1);
+try
+    for i = 1:R.nseg
+        Y{i} = zeros(R.T(i),R.D);
+        for lo = 1:block:R.T(i)
+            hi = min(lo+block-1,R.T(i));
+            Y{i}(lo:hi,:) = R.read(i,lo,hi);
+        end
+    end
+catch err
+    if ~any(strcmp(err.identifier,{'MATLAB:nomem','MATLAB:array:SizeLimitExceeded'})), rethrow(err); end
+    fprintf(['spm_eeg_hmm: not enough memory for the prepared data (%.1f GB); ' ...
+        'reading them from disk at every cycle.\n'],need/2^30);
+    return
+end
+R = data_reader(Y);

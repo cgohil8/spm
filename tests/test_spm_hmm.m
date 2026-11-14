@@ -1350,6 +1350,20 @@ function test_meeg_pca_before_embedding(testCase)
     testCase.verifyEqual(find(isnan(G(1,:))),[1 2 2999 3000]);
 end
 
+function test_meeg_inmemory(testCase)
+    % S.inmemory: the same model whether the prepared data are held in
+    % memory or read from disk at every cycle
+    files = make_meeg_datasets(testCase,'continuous');
+    S = struct('D',{files},'K',2,'tde',struct('lags',-2:2,'npca',3),...
+        'hmm',struct('verbose',false,'ninit',1,'maxcyc',5),'write',false);
+    H1 = spm_eeg_hmm(S);
+    H0 = spm_eeg_hmm(setfield(S,'inmemory',false)); %#ok<SFLD>
+    testCase.verifyEqual(H1.F,H0.F,'RelTol',1e-12);
+    testCase.verifyEqual(H1.path,H0.path);
+    testCase.verifyEqual(H1.missing,H0.missing);
+    testCase.verifyError(@() spm_eeg_hmm(setfield(S,'inmemory','yes')),'spm_hmm:invalidInput'); %#ok<SFLD>
+end
+
 end % methods (Test)
 end % classdef
 
