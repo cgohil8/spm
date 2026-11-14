@@ -86,6 +86,9 @@ for f = 1:nf
         tr = D{f}.indtrial(S.conditions,'GOOD');
     end
     tr = tr(:)';
+    if isempty(tr)
+        error('spm_hmm:invalidInput','Dataset %d has no good (selected) trials.',f);
+    end
     for t = tr
         seg_file(end+1,1)  = f; %#ok<AGROW>
         seg_trial(end+1,1) = t; %#ok<AGROW>

@@ -2,7 +2,9 @@ function [conn,pct,edges] = spm_hmm_gmm_threshold(conn,S)
 % Threshold networks with a two-component Gaussian mixture
 % FORMAT [conn,pct,edges] = spm_hmm_gmm_threshold(conn,S)
 %
-% conn              - [C x K x D x D], [K x D x D] or [D x D] networks
+% conn              - [C x K x D x D], [K x D x D] or [D x D] networks, or
+%                     [G x C x K x D x D] (sessions, thresholded separately;
+%                     pct is then [G x C x K])
 % S                 - options:
 %   .subtractmean     subtract the (weighted) mean over states      [false]
 %   .meanweights      [K x 1] weights for that mean               [uniform]
@@ -23,7 +25,7 @@ function [conn,pct,edges] = spm_hmm_gmm_threshold(conn,S)
 % As osl_dynamics.analysis.connectivity.gmm_threshold / fit_gmm and
 % osl_dynamics.utils.sklearn_wrappers.fit_gaussian_mixture: for each
 % component and state, a two-component Gaussian mixture (gmm_fit_1d, as
-% sklearn GaussianMixture with max_iter 5000, n_init 10) is fitted to the
+% sklearn GaussianMixture with n_init 10, run to convergence) is fitted to the
 % upper-triangle values; components are ordered by mean ('off' first) and
 % the threshold is, by default, the smallest value above the 'off' mean
 % that is more probably 'on' (or the .pvalue / .onecomponentpct rules).
@@ -33,11 +35,9 @@ function [conn,pct,edges] = spm_hmm_gmm_threshold(conn,S)
 % used by osl-dynamics) can stop EM after a few iterations, far from the
 % maximum likelihood, at a point that depends on its random k-means start;
 % set .gmmtol = 1e-3 to mimic it. With both converged the thresholds agree.
-% Two further differences from osl-dynamics, both for non-default
-% options: .meanweights are also used when applying the threshold
-% (osl-dynamics passes them to the fit only), and with .positiveonly the
-% percentile is taken over all values (osl-dynamics takes it over the
-% positive values but applies it to all).
+% .meanweights are used both for the fit and when applying the threshold,
+% and with .positiveonly the percentile is taken over all values (as
+% osl-dynamics since branch fix-gmm-convergence; before, it did neither).
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -49,6 +49,16 @@ def = struct('subtractmean',false,'meanweights',[],'standardise',false,...
 fn = fieldnames(def);
 for i = 1:numel(fn)
     if ~isfield(S,fn{i}), S.(fn{i}) = def.(fn{i}); end
+end
+if ndims(conn) == 5                                    % sessions
+    sg = size(conn); sg(1) = [];
+    edges = false(size(conn)); pct = zeros([size(conn,1) sg(1:2)]);
+    for g = 1:size(conn,1)
+        [cg,pg,eg] = spm_hmm_gmm_threshold(reshape(conn(g,:,:,:,:),sg),S);
+        conn(g,:,:,:,:) = reshape(cg,[1 sg]); edges(g,:,:,:,:) = reshape(eg,[1 sg]);
+        pct(g,:,:) = reshape(pg,[1 sg(1:2)]);
+    end
+    return
 end
 sz = size(conn);
 switch numel(sz)
@@ -102,6 +112,9 @@ if abs(mu(2) - mu(1)) < S.nsigma*sd(1) && ~isempty(S.onecomponentpct)
     idx = floor(S.onecomponentpct*numel(X)/100) + 1;
     thr = X(a(min(idx,numel(X))));
 elseif ~isempty(S.pvalue)
+    if max(Xs) <= 0
+        error('spm_hmm:invalidInput','The pvalue rule needs positive values (try .standardise).');
+    end
     dX = max(Xs)/100;
     xg = mu(1):dX:max(Xs)+dX;
     xg = xg(xg < max(Xs) + dX);                          % numpy arange end

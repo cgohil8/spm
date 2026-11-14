@@ -448,7 +448,7 @@ We implement osl-dynamics' algorithm (`osl_dynamics.data.sign_flipping` and `Dat
 - **Each iteration:** update $W$, then $H$, one component at a time: $w_t\leftarrow\max(w_t-(WH H^\top_{:,t}-XH^\top_{:,t})/(HH^\top)_{tt},0)$.
 - **Stop:** when the summed |projected gradient| relative to the first iteration is at most the tolerance.
 
-**One difference from sklearn.** sklearn computes the NNDSVDA starting point from a *randomised* SVD; osl-dynamics passes `random_state=None`, so its components vary slightly between runs. We use the exact truncated SVD, which the randomised SVD approximates.
+**One difference from sklearn.** sklearn computes the NNDSVDA starting point from a *randomised* SVD. Until branch `fix-gmm-convergence`, osl-dynamics passed `random_state=None`, so its components varied slightly between runs; it now defaults to a fixed seed. We use the exact truncated SVD, which the randomised SVD approximates.
 
 ## 9g. Power maps and coherence networks
 
@@ -472,9 +472,11 @@ These follow `osl_dynamics.analysis.power` and `osl_dynamics.analysis.connectivi
 - convert it to a rank percentile and apply it as above. As in osl-dynamics, this round trip drops the threshold edge itself.
 
 **Three differences from osl-dynamics:**
-1. **The mixture is fitted to convergence** (tolerance $10^{-10}$). sklearn's default tolerance of $10^{-3}$, which osl-dynamics uses, stopped EM after about 4 iterations in a test, at a mean log-likelihood of 1.15000 against an optimum of 1.15094, with weights 0.76/0.24 against 0.67/0.33. Where it stops depends on its random k-means start. Fitted to convergence, both packages give identical thresholds.
+1. **The mixture is fitted to convergence** (tolerance $10^{-10}$, which osl-dynamics also uses for network thresholds since branch `fix-gmm-convergence`). sklearn's default tolerance of $10^{-3}$, which osl-dynamics used before, stopped EM after about 4 iterations in a test, at a mean log-likelihood of 1.15000 against an optimum of 1.15094, with weights 0.76/0.24 against 0.67/0.33. Where it stops depends on its random k-means start. Fitted to convergence, both packages give identical thresholds.
 2. **Mean weights** are also used when applying the threshold.
 3. **With `positiveonly`**, the percentile is taken over all values.
+
+osl-dynamics made the same changes for 2 and 3, and fixed the `p_value` crash, on branch `fix-gmm-convergence`; the notes below describe its behaviour before that.
 
 Differences 2 and 3 only affect non-default options; osl-dynamics is internally inconsistent in both. osl-dynamics' `p_value` option currently fails with recent NumPy (`np.arange` with array arguments).
 

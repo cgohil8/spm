@@ -66,6 +66,9 @@ end
 
 offset = 0;
 usetde = isfield(S.tde,'lags') && ~isempty(S.tde.lags);
+if usetde && ~(isfield(S.tde,'npca') && ~isempty(S.tde.npca))
+    error('spm_hmm:invalidInput','S.tde.npca must be given with S.tde.lags.');
+end
 if usetde
     [R,tde] = spm_hmm_tde_pca(R,struct('lags',S.tde.lags,'npca',S.tde.npca,...
         'group',info.seg_file,'standardise',S.standardise));
@@ -88,8 +91,7 @@ Dout = cell(nf,1);
 if S.write
     labels = arrayfun(@(k) sprintf('State%d',k),1:S.K,'UniformOutput',false);
     for f = 1:nf
-        Dout{f} = clone(D{f},spm_file(fnamedat(D{f}),'path','','prefix',S.prefix),...
-            [S.K D{f}.nsamples D{f}.ntrials]);
+        Dout{f} = output_dataset(D{f},S.prefix,S.K);
         Dout{f} = chanlabels(Dout{f},1:S.K,labels);
         Dout{f} = chantype(Dout{f},1:S.K,'Other');
         Dout{f} = units(Dout{f},1:S.K,'probability');

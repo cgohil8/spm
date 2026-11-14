@@ -76,13 +76,22 @@ if isempty(chanind), error('spm_hmm:invalidInput','No channels selected.'); end
 nc = numel(chanind);
 fs = D.fsample;
 ns = D.nsamples;
-if ~isempty(S.freq) && S.freq(2) >= fs/2 && S.freq(1) == 0
-    error('spm_hmm:invalidInput','S.freq does not define a filter below Nyquist.');
+if ~isempty(S.freq)
+    if S.freq(1) >= fs/2
+        error('spm_hmm:invalidInput','S.freq(1) must be below the Nyquist frequency.');
+    end
+    if isfinite(S.freq(2)) && S.freq(2) >= fs/2
+        error('spm_hmm:invalidInput',['S.freq(2) must be below the Nyquist ' ...
+            'frequency (Inf for a high-pass filter).']);
+    end
+end
+if w > ns
+    error('spm_hmm:invalidInput','S.window is longer than a trial.');
 end
 
 %-Output dataset with the selected channels
 %--------------------------------------------------------------------------
-Dout = clone(D,spm_file(fnamedat(D),'path','','prefix',S.prefix),[nc ns D.ntrials]);
+Dout = output_dataset(D,S.prefix,nc);
 Dout = chanlabels(Dout,1:nc,D.chanlabels(chanind));
 Dout = chantype(Dout,1:nc,D.chantype(chanind));
 Dout = units(Dout,1:nc,D.units(chanind));

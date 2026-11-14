@@ -15,9 +15,10 @@ function [R,info] = spm_hmm_tde_pca(Y,S)
 %
 % R             - data reader returning the [T_i - span x npca] projected
 %                 data, span = max(lags) - min(lags). Row t of segment i is
-%                 built from original samples t - min(lags) + lags, i.e. it
-%                 is centred on original sample t - min(lags). A row is
-%                 missing (NaN) if any of the samples it uses is missing.
+%                 built from original samples t - min(lags) + lags, so its
+%                 lag-0 sample is original sample t - min(lags). The lags
+%                 must include 0. A row is missing (NaN) if any of the
+%                 samples it uses is missing.
 % info          - .lags, .offset (= -min(lags): original sample of row t
 %                 is t + offset), .W ([E*D x npca] components; column
 %                 index (e-1)*D + d is channel d at lags(e)), .mu (embedded
@@ -39,8 +40,9 @@ if ~isfield(S,'lags') || ~isfield(S,'npca')
     error('spm_hmm:invalidInput','S.lags and S.npca must be specified.');
 end
 lags = S.lags(:)';
-if isempty(lags) || any(lags ~= round(lags)) || numel(unique(lags)) ~= numel(lags)
-    error('spm_hmm:invalidInput','S.lags must be distinct integers.');
+if isempty(lags) || any(lags ~= round(lags)) || numel(unique(lags)) ~= numel(lags) ...
+        || ~any(lags == 0)
+    error('spm_hmm:invalidInput','S.lags must be distinct integers including 0.');
 end
 if ~isfield(S,'group') || isempty(S.group), S.group = (1:R0.nseg)'; end
 if ~isfield(S,'standardise'), S.standardise = true; end

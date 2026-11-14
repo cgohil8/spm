@@ -133,4 +133,4 @@ if S.coh
     spec.coh = abs(cp)./sqrt(reshape(pd,[G K D 1 F]).*reshape(pd,[G K 1 D F]));
     spec.coh(isnan(spec.coh)) = 0;
 end
-if S.cpsd, spec.cpsd = cp; end
+if S.cpsd, cp(isnan(cp)) = 0; spec.cpsd = cp; end

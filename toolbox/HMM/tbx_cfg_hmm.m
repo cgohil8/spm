@@ -164,7 +164,7 @@ prefix.strtype = 's';
 prefix.num     = [1 Inf];
 prefix.val     = {'hmm_'};
 prefix.help    = {['Prefix of the datasets holding the state probabilities, '...
-    'and of the model file (<prefix>model.mat, next to the first dataset).']};
+    'and of the model file (<prefix>model_<first dataset>.mat, next to it).']};
 
 %--------------------------------------------------------------------------
 % Executable branch
@@ -205,7 +205,7 @@ end
 
 [HMM,Dout] = spm_eeg_hmm(S);
 
-modelfile = spm_file(S.D{1},'filename',[job.prefix 'model.mat']);
+modelfile = spm_file(S.D{1},'prefix',[job.prefix 'model_']);
 save(modelfile,'HMM',spm_get_defaults('mat.format'));
 out.D      = Dout;
 out.Dfname = cellfun(@fullfile,Dout,'UniformOutput',false);

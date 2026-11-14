@@ -2,8 +2,9 @@ function [F,vals] = spm_hmm_plot_power_map(values,atlas,S)
 % Plot parcel maps (e.g. state power maps) on the cortical surface
 % FORMAT [F,vals] = spm_hmm_plot_power_map(values,atlas,S)
 %
-% values          - [P x N] values of each parcel for N maps (e.g. the
-%                   power of each state, squeeze(P(g,c,:,:))')
+% values          - [P x N] values of each parcel for N maps, e.g. the
+%                   power of each state of session g and component c from
+%                   spm_hmm_power_maps: reshape(P(g,c,:,:),K,[])'
 % atlas           - atlas NIfTI used for the parcellation
 % S               - options:
 %   .subtractmean   subtract the (weighted) mean over the N maps    [false]
@@ -15,7 +16,7 @@ function [F,vals] = spm_hmm_plot_power_map(values,atlas,S)
 %                   [canonical/cortex_8196.surf.gii]
 %   .maxdist        vertices further than this (mm) from a parcel voxel
 %                   are not coloured                  [1.5 x voxel size]
-%   .titles         cell array of titles                         [Map n]
+%   .titles         cell array with one title per plotted map    [none]
 %
 % F               - figure handles, one per map
 % vals            - [n_vertices x numel(maps)] values shown at the vertices
@@ -54,14 +55,14 @@ end
 M   = gifti(S.mesh);
 vtx = double(M.vertices);
 fc  = double(M.faces);
-inparc = find(any(A.W > 0,2));
+inparc = find(any(A.W,2));
 [i,j,k] = ind2sub(A.dim,inparc);
 xyz = [i j k ones(numel(i),1)]*A.mat';
 xyz = xyz(:,1:3);
 if isempty(S.maxdist), S.maxdist = 1.5*mean(sqrt(sum(A.mat(1:3,1:3).^2,1))); end
 [near,dist] = nearest_point(vtx,xyz);
-mx  = max(A.W,[],1); mx(mx == 0) = 1;
-Wv  = A.W(inparc(near),:)./mx;
+mx  = full(max(A.W,[],1)); mx(mx == 0) = 1;
+Wv  = full(A.W(inparc(near),:))./mx;
 vals = Wv*values(:,S.maps);
 vals(dist > S.maxdist,:) = NaN;
 
@@ -96,8 +97,9 @@ function [idx,d] = nearest_point(a,b)
 % nearest row of b for each row of a (Euclidean), in blocks
 idx = zeros(size(a,1),1); d = idx;
 bb  = sum(b.^2,2)';
-for lo = 1:2000:size(a,1)
-    hi = min(lo+1999,size(a,1));
+nb  = max(1,floor(5e6/size(b,1)));                    % ~40 MB per block
+for lo = 1:nb:size(a,1)
+    hi = min(lo+nb-1,size(a,1));
     D2 = sum(a(lo:hi,:).^2,2) + bb - 2*a(lo:hi,:)*b';
     [m,idx(lo:hi)] = min(D2,[],2);
     d(lo:hi) = sqrt(max(m,0));

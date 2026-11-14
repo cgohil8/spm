@@ -37,6 +37,7 @@ if ~isequal(size(conn),[P P])
     error('spm_hmm:invalidInput','conn must be [P x P] with P = %d parcels.',P);
 end
 conn(1:P+1:end) = 0;
+conn(isnan(conn)) = 0;
 [i,j] = find(triu(conn ~= 0,1));
 v = conn(sub2ind([P P],i,j));
 cl = S.clim;

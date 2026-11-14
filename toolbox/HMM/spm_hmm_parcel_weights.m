@@ -1,6 +1,6 @@
-function V = spm_hmm_parcel_weights(C,w,method,pos)
+function V = spm_hmm_parcel_weights(C,w,method,pos,centres)
 % Weights that combine source time courses into parcel time courses
-% FORMAT V = spm_hmm_parcel_weights(C,w,method,pos)
+% FORMAT V = spm_hmm_parcel_weights(C,w,method,pos,centres)
 %
 % C       - [n x n] covariance of the n source time courses (normalised by
 %           the number of samples), or a function handle C(ind) returning
@@ -9,10 +9,12 @@ function V = spm_hmm_parcel_weights(C,w,method,pos)
 %           atlas)
 % method  - 'pca' (default) or 'centroid'
 % pos     - [n x 3] source coordinates in mm (needed for 'centroid')
+% centres - [P x 3] parcel centres in mm for 'centroid' (e.g. the atlas
+%           centres from spm_hmm_parcel_maps)    [weighted centre of sources]
 %
 % V       - [n x P] such that parcel time courses are V' * (x - mean(x))
 %
-% 'pca', as osl-ephys parcellation._get_parcel_weights: for parcel p, with
+% 'pca', as osl_dynamics.meeg.parcellation._get_parcel_weights: for parcel p, with
 % s = w(ind,p)/max(w(ind,p)) over its sources ind (weight > 0):
 %   u     = leading eigenvector of diag(s)*C(ind,ind)*diag(s), eigenvalue d
 %   m     = sources with s > 0.5 and non-zero variance (else all with
@@ -22,8 +24,9 @@ function V = spm_hmm_parcel_weights(C,w,method,pos)
 % so the parcel time course is the first principal component of the
 % weighted sources, with standard deviation equal to the |u|-weighted mean
 % of the source standard deviations and a positive mean loading.
-% 'centroid', as osl-ephys _get_parcel_data_centroid: the source nearest to
-% the weighted centre of the parcel, unscaled.
+% 'centroid', as osl-dynamics _get_parcel_data_centroid: the source nearest
+% to the parcel centre, unscaled (with atlas centres, as osl-dynamics, a
+% parcel needs no source of its own).
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -59,8 +62,12 @@ switch lower(method)
     case 'centroid'
         if nargin < 4, error('spm_hmm:invalidInput','pos is needed for the centroid method.'); end
         for p = 1:P
-            if ~any(w(:,p) > 0), empty(end+1) = p; continue; end %#ok<AGROW>
-            c = (w(:,p)'*pos)/sum(w(:,p));
+            if nargin > 4 && ~isempty(centres)
+                c = centres(p,:);
+            else
+                if ~any(w(:,p) > 0), empty(end+1) = p; continue; end %#ok<AGROW>
+                c = (w(:,p)'*pos)/sum(w(:,p));
+            end
             [~,k] = min(sum((pos - c).^2,2));
             V(k,p) = 1;
         end

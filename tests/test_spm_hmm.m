@@ -1053,6 +1053,97 @@ function test_option_validation(testCase)
     end
 end
 
+function test_parcellation_keeps_sensor_artefacts(testCase)
+    % artefact events on a sensor must still mark samples bad for parcels
+    [BF,atlas] = synthetic_beamformer(testCase);
+    D = spm_eeg_load(BF.data.D);
+    D = events(D,1,struct('type','artefact_jump','value','MEG03','time',5,'duration',0.495,'offset',0));
+    save(D);
+    Dp = spm_eeg_hmm_parcellate(struct('BF',BF,'atlas',atlas,'weightnorm','none'));
+    R  = spm_hmm_meeg_reader({fullfile(Dp)});
+    y  = R.read(1,1,R.T(1));
+    testCase.verifyEqual(find(any(isnan(y),2))',1001:1100);
+end
+
+function test_meeg_outputs_float_and_fresh_channels(testCase)
+    % int16 input: outputs must be float (NaN edges, fractional values);
+    % K equal to the number of input channels must not inherit bad flags
+    files = make_meeg_datasets(testCase,'continuous');
+    D  = spm_eeg_load(files{1});
+    x  = D(:,:,1);
+    fd = fullfile(D.path,'i16.dat');                         % int16 data file
+    fid = fopen(fd,'w','ieee-le'); fwrite(fid,round(x/1e-3),'int16'); fclose(fid);
+    Di = unlink(D); Di = fname(Di,'i16.mat');
+    Di = link(Di,fd,'int16-le',1e-3,0); save(Di);
+    testCase.verifyEqual(Di(:,:,1),round(x/1e-3)*1e-3,'AbsTol',1e-9);
+    De = spm_eeg_hmm_envelope(struct('D',fullfile(Di),'window',5));
+    y  = De(:,:,1);
+    testCase.verifyTrue(all(isnan(reshape(y(:,[1 2 end-1 end]),[],1))));
+    D5 = badchannels(Di,4,1); D5 = chantype(D5,1:5,'LFP'); save(D5);
+    [~,Do] = spm_eeg_hmm(struct('D',fullfile(D5),'K',4,'channels',{{'P1','P2','P3','TRIG'}},...
+        'hmm',struct('verbose',false,'ninit',1)));
+    testCase.verifyEmpty(Do{1}.badchannels);
+    g = Do{1}(:,:,1);
+    testCase.verifyTrue(any(g(:) > 0.01 & g(:) < 0.99));         % not quantised
+end
+
+function test_atlas_reading_edge_cases(testCase)
+    dd = tempname; mkdir(dd);
+    testCase.addTeardown(@rmdir,dd,'s');
+    mat = [8 0 0 -20; 0 8 0 -20; 0 0 8 -20; 0 0 0 1];
+    % label atlas with NaN background
+    V = struct('fname',fullfile(dd,'lab.nii'),'dim',[4 4 4],'mat',mat,'dt',[spm_type('float32') 0]);
+    Y = NaN(4,4,4); Y(1:2,:,:) = 3; Y(3:4,:,:) = 7;
+    spm_write_vol(V,Y);
+    [Vm,c] = spm_hmm_parcel_maps([1; 2],V.fname,fullfile(dd,'m.nii.gz'));
+    testCase.verifyEqual(size(c),[2 3]);                      % NaN is not a parcel
+    testCase.verifyEqual(exist(fullfile(dd,'m.nii.gz'),'file'),2);
+    testCase.verifyEqual(Vm(1).fname,fullfile(dd,'m.nii.gz'));
+    % centroid with atlas centres: a parcel needs no source of its own
+    V = spm_hmm_parcel_weights(eye(3),[1 0; 1 0; 1 0],'centroid',[0 0 0; 5 0 0; 50 0 0],[0 0 0; 40 0 0]);
+    testCase.verifyEqual(find(V(:,2))',3);
+end
+
+function test_more_input_validation(testCase)
+    Y = {randn(100,3)};
+    testCase.verifyError(@() spm_hmm_tde_pca(Y,struct('lags',1:3,'npca',2)),'spm_hmm:invalidInput');
+    files = make_meeg_datasets(testCase,'continuous');
+    testCase.verifyError(@() spm_eeg_hmm(struct('D',files{1},'K',2,'tde',struct('lags',-2:2))),'spm_hmm:invalidInput');
+    testCase.verifyError(@() spm_eeg_hmm_envelope(struct('D',files{1},'freq',[5 150])),'spm_hmm:invalidInput');
+    testCase.verifyError(@() spm_eeg_hmm_envelope(struct('D',files{1},'window',4001)),'spm_hmm:invalidInput');
+    efiles = make_meeg_datasets(testCase,'epoched');
+    D = spm_eeg_load(efiles{2}); D = badtrials(D,1:D.ntrials,1); save(D);
+    testCase.verifyError(@() spm_hmm_meeg_reader(efiles),'spm_hmm:invalidInput');
+    D = spm_eeg_load(files{1}); D = badchannels(D,2,1); save(D);
+    testCase.verifyError(@() spm_eeg_hmm_orthogonalise(struct('D',files{1},'channels',{{'P1','P2'}})),'spm_hmm:invalidInput');
+end
+
+function test_spectral_shapes_and_missing_states(testCase)
+    % thresholds accept the 5-D output of spm_hmm_coherence_networks
+    rs = RandStream('mt19937ar','Seed',3);
+    C = rand(rs,2,1,3,6,6); C = (C + permute(C,[1 2 3 5 4]))/2;
+    [t,e] = spm_hmm_threshold_network(C,struct('percentile',80));
+    [t1,e1] = spm_hmm_threshold_network(reshape(C(2,:,:,:,:),[1 3 6 6]),struct('percentile',80));
+    testCase.verifyEqual(size(e),size(C));
+    testCase.verifyEqual(reshape(e(2,:,:,:,:),[1 3 6 6]),e1);
+    testCase.verifyEqual(reshape(t(2,:,:,:,:),[1 3 6 6]),t1);
+    [~,p] = spm_hmm_gmm_threshold(C,struct());
+    testCase.verifyEqual(size(p),[2 1 3]);
+    % power maps from cross-spectra with a single frequency
+    s = struct('f',10,'cpsd',reshape(repmat(eye(2),[1 1 3]),[1 3 2 2 1]));
+    P = spm_hmm_power_maps(s);
+    testCase.verifyEqual(size(P),[1 1 3 2]);
+    % probability datasets: samples the HMM had missing carry no weight
+    [file,~] = amplitude_states_dataset(testCase);
+    Do  = spm_eeg_hmm_envelope(struct('D',file,'freq',[5 15],'window',5));
+    [HMM,Dst] = spm_eeg_hmm(struct('D',fullfile(Do),'K',3,'lifetime',0.5,'hmm',struct('verbose',false,'ninit',1)));
+    s1 = spm_eeg_hmm_spectra(struct('D',file,'HMM',HMM,'states',{Dst},'freq',[1 40]));
+    Ds = Dst{1}; g = Ds(:,:,1); g(:,HMM.missing{1}) = repmat([1;0;0],1,nnz(HMM.missing{1}));
+    Ds(:,:,1) = g; save(Ds);
+    s2 = spm_eeg_hmm_spectra(struct('D',file,'HMM',HMM,'states',{{fullfile(Ds)}},'freq',[1 40]));
+    testCase.verifyEqual(s2.psd,s1.psd,'RelTol',1e-10);
+end
+
 function test_input_errors(testCase)
     Y = {randn(50,2)};
     testCase.verifyError(@() spm_hmm(Y,struct()),'spm_hmm:invalidInput');

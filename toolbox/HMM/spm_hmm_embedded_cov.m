@@ -9,12 +9,15 @@ function C = spm_hmm_embedded_cov(Y,S)
 %   .nembed       number of embeddings E (odd)                          [15]
 %   .standardise  standardise the embedded data first                 [true]
 %   .segments     segments of Y to use                                 [all]
-%   .missing      cell array of [T_i x 1] masks of missing samples, used
-%                 instead of NaN rows (e.g. so that the band-pass filter
-%                 runs through bad samples, as osl-dynamics does)       [{}]
+%   .missing      cell array of [T_i x 1] masks of missing samples, in
+%                 addition to NaN rows (e.g. bad samples given as values,
+%                 so that the band-pass filter runs through them, as
+%                 osl-dynamics does)                                    [{}]
 %   .bands        [n_bands x 2] band edges in Hz: one covariance per band
 %                 of the band-pass filtered data (osl-dynamics
-%                 calc_cov_mne_raw(frequency_bands=...))                [[]]
+%                 calc_cov_mne_raw(frequency_bands=...), which uses MNE's
+%                 default FIR filter; here the zero-phase Butterworth of
+%                 spm_eeg_filter, order 5)                              [[]]
 %   .fs           sampling frequency (Hz), needed with .bands
 %
 % C             - [D*E x D*E] covariance, or [n_bands x D*E x D*E]
@@ -73,7 +76,10 @@ for j = 1:numel(S.segments)
         y(isnan(y)) = 0;
         for b = 1:nb
             yb = ft_preproc_bandpassfilter(y',S.fs,S.bands(b,:),5,'but','twopass','reduce')';
-            [n,s1,s2] = add_block(n,s1,s2,b,yb,m,E);
+            for lo = 1:block:T-E+1                % embed in blocks of rows
+                hi = min(lo+block-1,T-E+1);
+                [n,s1,s2] = add_block(n,s1,s2,b,yb(lo:hi+E-1,:),m(lo:hi+E-1),E);
+            end
         end
     end
 end
@@ -95,11 +101,9 @@ if nb == 1, C = reshape(C,N,N); end
 
 %==========================================================================
 function m = missing_mask(S,j,y,lo,hi)
-if isempty(S.missing)
-    m = any(isnan(y),2);
-else
-    m = S.missing{j}(lo:hi);
-    m = m(:);
+m = any(isnan(y),2);
+if ~isempty(S.missing)
+    m = m | reshape(S.missing{j}(lo:hi),[],1);
 end
 
 %==========================================================================

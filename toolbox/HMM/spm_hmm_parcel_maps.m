@@ -6,7 +6,7 @@ function [V,centres] = spm_hmm_parcel_maps(values,atlas,fname)
 % values   - [P x N] values of each parcel for N maps (e.g. power maps of
 %            N states), or [] to return only the parcel centres
 % atlas    - atlas NIfTI (.nii or .nii.gz; 3D labels or 4D weights)
-% fname    - output NIfTI file (3D for N = 1, 4D otherwise)
+% fname    - output NIfTI file (.nii or .nii.gz; 3D for N = 1, 4D otherwise)
 %
 % V        - header(s) of the written map
 % centres  - [P x 3] weighted centre of each parcel (mm)
@@ -23,14 +23,12 @@ function [V,centres] = spm_hmm_parcel_maps(values,atlas,fname)
 
 
 A = read_atlas(atlas);
-[i,j,k] = ind2sub(A.dim,(1:prod(A.dim))');
+nz = find(any(A.W,2));                                % voxels in any parcel
+[i,j,k] = ind2sub(A.dim,nz);
 xyz = [i j k ones(numel(i),1)]*A.mat';
 xyz = xyz(:,1:3);
-centres = zeros(A.P,3);
-for p = 1:A.P
-    w = A.W(:,p);
-    centres(p,:) = (w'*xyz)/sum(w);
-end
+Wn  = A.W(nz,:);
+centres = full((Wn'*xyz)./sum(Wn,1)');
 if isempty(values)
     V = centres;
     return
@@ -38,9 +36,11 @@ end
 if size(values,1) ~= A.P
     error('spm_hmm:invalidInput','The atlas has %d parcels, values has %d rows.',A.P,size(values,1));
 end
-mx = max(A.W,[],1); mx(mx == 0) = 1;
-Y  = (A.W./mx)*values;                                % [nvox x N]
+mx = full(max(A.W,[],1)); mx(mx == 0) = 1;
+Y  = full((A.W*spdiags(1./mx',0,A.P,A.P))*values);   % [nvox x N]
 N  = size(values,2);
+gz = numel(fname) > 3 && strcmpi(fname(end-2:end),'.gz');
+if gz, fname = fname(1:end-3); end
 V0 = struct('fname',fname,'dim',A.dim,'mat',A.mat,'dt',[spm_type('float32') spm_platform('bigend')],...
     'pinfo',[1;0;0],'descrip','spm_hmm_parcel_maps');
 V  = cell(N,1);
@@ -49,3 +49,7 @@ for n = 1:N
     V{n} = spm_write_vol(V0,reshape(Y(:,n),A.dim));
 end
 V = cat(1,V{:});
+if gz                                                  % write .nii, then gzip
+    gzip(fname); delete(fname);
+    [V.fname] = deal([fname '.gz']);
+end

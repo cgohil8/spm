@@ -2,8 +2,10 @@ function [conn,edges] = spm_hmm_threshold_network(conn,S)
 % Keep the strongest edges of connectivity networks
 % FORMAT [conn,edges] = spm_hmm_threshold_network(conn,S)
 %
-% conn            - [C x K x D x D] networks (components x states), or
-%                   [K x D x D] or [D x D]
+% conn            - [C x K x D x D] networks (components x states),
+%                   [K x D x D], [D x D], or [G x C x K x D x D] (sessions,
+%                   as from spm_hmm_coherence_networks; each session is
+%                   thresholded separately)
 % S               - options:
 %   .percentile     percentile threshold: scalar or [C x K]       [required]
 %   .subtractmean   subtract the (weighted) mean over states first  [false]
@@ -29,6 +31,15 @@ if ~isfield(S,'percentile'), error('spm_hmm:invalidInput','S.percentile must be 
 if ~isfield(S,'subtractmean'), S.subtractmean = false; end
 if ~isfield(S,'meanweights'),  S.meanweights  = [];    end
 if ~isfield(S,'absolute'),     S.absolute     = false; end
+if ndims(conn) == 5                                    % sessions
+    edges = false(size(conn));
+    for g = 1:size(conn,1)
+        sg = size(conn); sg(1) = [];
+        [cg,eg] = spm_hmm_threshold_network(reshape(conn(g,:,:,:,:),sg),S);
+        conn(g,:,:,:,:) = reshape(cg,[1 sg]); edges(g,:,:,:,:) = reshape(eg,[1 sg]);
+    end
+    return
+end
 sz0 = size(conn);
 c4  = to4d(conn);
 [Nc,K,D,~] = size(c4);

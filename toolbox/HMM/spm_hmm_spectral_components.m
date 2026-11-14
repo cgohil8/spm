@@ -9,8 +9,8 @@ function [comp,f] = spm_hmm_spectral_components(spec,ncomp,S)
 % S       - options for spm_hmm_nmf (.maxiter, .tol)
 %
 % comp    - [ncomp x F] non-negative spectral components, ordered by the
-%           frequency of their peak (not normalised; spm_hmm_power and
-%           spm_hmm_coherence divide by their sums)
+%           frequency of their peak (not normalised; spm_hmm_power_maps and
+%           spm_hmm_coherence_networks divide by their sums)
 % f       - frequencies (if spec is a structure)
 %
 % As osl_dynamics.analysis.spectral.decompose_spectra: the coherence of

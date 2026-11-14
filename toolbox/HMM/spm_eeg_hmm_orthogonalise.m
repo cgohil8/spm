@@ -8,19 +8,20 @@ function [Dout,M] = spm_eeg_hmm_orthogonalise(S)
 %   .chantype    channel types, good channels only [{'MEEG','LFP','SRC'}]
 %   .prefix      prefix of the output dataset                     ['orth_']
 %
-% Dout         - dataset(s) with the selected channels orthogonalised; other
-%                channels, events and trials are unchanged
+% Dout         - float32 dataset(s) with the selected channels
+%                orthogonalised; other channels, events and trials are
+%                unchanged
 % M            - [P x P] matrix (cell array for several datasets) such that
 %                the orthogonalised data are Y*M, with Y [samples x P]
 %
-% As osl-ephys parcellation._symmetric_orthogonalisation with
+% As osl_dynamics.meeg.parcellation.symmetric_orthogonalization with
 % maintain_magnitudes=True (Colclough et al. 2015, NeuroImage 117:439),
 % computed on the good samples of the good trials, concatenated (A):
 %   D = diag(sqrt(diag(A'*A))),  [U,s,V] = svd(A*D),  out = U*V'*D
 % i.e. out = A*M with M = D*V*diag(1./s)*V'*D. M is applied to every sample
-% (osl-ephys omits bad samples). Each channel keeps its original norm over
+% (osl-dynamics omits bad samples). Each channel keeps its original norm over
 % the good samples and the channels become exactly uncorrelated (zero
-% inner products). The data are not demeaned first (osl-ephys
+% inner products). The data are not demeaned first (osl-dynamics
 % orthogonalises demeaned parcel data; spm_eeg_hmm_parcellate output is
 % demeaned). An error is raised if A is rank deficient.
 %__________________________________________________________________________
@@ -49,6 +50,9 @@ if isempty(S.channels)
 else
     [ok,ch] = ismember(cellstr(S.channels),D.chanlabels);
     if ~all(ok), error('spm_hmm:invalidInput','Unknown channel label(s).'); end
+    if any(ismember(ch,D.badchannels))
+        error('spm_hmm:invalidInput','A selected channel is marked bad.');
+    end
 end
 ch = ch(:)';
 P  = numel(ch);
@@ -87,11 +91,13 @@ M = Dm*V*diag(1./s)*V'*Dm;
 
 %-Write
 %--------------------------------------------------------------------------
-Dout = copy(D,spm_file(fullfile(D),'prefix',S.prefix));
+Dout = clone(D,spm_file(D.fname,'ext','.dat','prefix',S.prefix),size(D),0,1);   % float32
 for t = 1:D.ntrials
     for lo = 1:1e5:D.nsamples
         hi = min(lo+1e5-1,D.nsamples);
-        Dout(ch,lo:hi,t) = (double(D(ch,lo:hi,t))'*M)';
+        y  = double(D(:,lo:hi,t));
+        y(ch,:) = (y(ch,:)'*M)';
+        Dout(:,lo:hi,t) = y;
     end
 end
 Dout = Dout.history(mfilename,S);

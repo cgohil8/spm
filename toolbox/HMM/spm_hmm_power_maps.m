@@ -33,8 +33,9 @@ end
 if isfield(spec,'psd')
     x = spec.psd;
 else
-    c = spec.cpsd; sz = size(c);
-    x = zeros(sz([1 2 3 5]));
+    c = spec.cpsd;
+    sz = [size(c,1) size(c,2) size(c,3) size(c,5)];        % F may be 1
+    x = zeros(sz);
     for d = 1:sz(3), x(:,:,d,:) = real(c(:,:,d,d,:)); end
 end
 x = real(x);

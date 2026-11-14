@@ -13,28 +13,30 @@ function [Dout,info] = spm_eeg_hmm_parcellate(S)
 %   .method        'pca' or 'centroid' (see spm_hmm_parcel_weights)  ['pca']
 %   .weightnorm    'unit-noise-gain': scale each source filter to unit norm
 %                  (unit-noise-gain beamformer for white sensor noise, as
-%                  osl-ephys parcellates weight-normalised filters);
+%                  osl-dynamics parcellates weight-normalised filters);
 %                  'none': use the DAiSS (unit-gain) filters ['unit-noise-gain']
 %   .orthogonalise symmetric orthogonalisation of the parcels afterwards
 %                  (spm_eeg_hmm_orthogonalise)                       [false]
 %   .prefix        prefix of the output dataset                   ['parc_']
 %
-% Dout           - dataset with one channel per parcel ('parcel001', ...,
-%                  type 'LFP'); events, trials and bad trials are copied
+% Dout           - float32 dataset with one channel per parcel
+%                  ('parcel001', ..., type 'LFP'); events, trials and bad
+%                  trials are copied
 % info           - .filters  [P x n_channels] parcel filters (sensor space)
 %                  .channels sensor channel labels of the filters
 %                  .weights  [n_sources x P] (spm_hmm_parcel_weights)
 %                  .mni      [n_sources x 3] source positions (mm)
 %                  .parcel_weights [n_sources x P] atlas weights
 %
-% As osl-ephys parcellation.parcellate_lcmv: the covariance of the sources
+% As osl_dynamics.meeg.parcellation.parcellate_lcmv: the covariance of the sources
 % is F*C*F', where F are the source filters in sensor space and C the
 % sensor covariance (normalised by the number of samples) over the good
 % samples of the good trials; parcel filters are V'*F and parcel time
 % courses V'*F*(y - mean(y)), with the mean over the same good samples.
 % The atlas is sampled at the source positions by nearest neighbour.
-% Unlike osl-ephys, which zero-fills bad samples, the filters are applied
-% to every sample and artefact events are kept.
+% Unlike osl-dynamics, which zero-fills bad samples, the filters are
+% applied to every sample and artefact events are kept; an artefact on any
+% beamformer sensor applies to all parcels (its event value becomes 'all').
 %
 % Atlases are not distributed with SPM. Parcellations for MEG (e.g.
 % Glasser52, atlas-Glasser_nparc-52_space-MNI_res-8x8x8.nii.gz, CC BY 4.0)
@@ -106,14 +108,17 @@ C  = s2/n - mu*mu';                                 % biased, as np.cov(bias=Tru
 %-Parcel weights and filters
 %--------------------------------------------------------------------------
 pw = atlas_weights(S.atlas,mni);
-Vw = spm_hmm_parcel_weights(@(ind) F(ind,:)*C*F(ind,:)',pw,S.method,mni);
+centres = [];
+if strcmpi(S.method,'centroid'), centres = spm_hmm_parcel_maps([],S.atlas); end
+Vw = spm_hmm_parcel_weights(@(ind) F(ind,:)*C*F(ind,:)',pw,S.method,mni,centres);
 Fp = Vw'*F;                                         % [P x n_channels]
 P  = size(Fp,1);
 
 %-Write parcel dataset
 %--------------------------------------------------------------------------
 labels = arrayfun(@(p) sprintf('parcel%03d',p),1:P,'UniformOutput',false);
-Dout = clone(D,spm_file(fnamedat(D),'path','','prefix',S.prefix),[P D.nsamples D.ntrials]);
+Dout = output_dataset(D,S.prefix,P);
+Dout = parcel_artefact_events(Dout,D,chanind);
 Dout = chanlabels(Dout,1:P,labels);
 Dout = chantype(Dout,1:P,'LFP');
 Dout = units(Dout,1:P,'a.u.');
@@ -135,4 +140,23 @@ info.parcel_weights = pw;
 
 if S.orthogonalise
     Dout = spm_eeg_hmm_orthogonalise(struct('D',Dout));
+end
+
+
+%==========================================================================
+function Dout = parcel_artefact_events(Dout,D,chanind)
+% Every parcel combines all beamformer sensors, so an artefact on any of
+% them marks the sample bad for all parcels: such events get value 'all'
+for t = 1:D.ntrials
+    ev = D.events(t);
+    if iscell(ev), ev = ev{1}; end
+    if isempty(ev), continue; end
+    for k = 1:numel(ev)
+        if strncmp(ev(k).type,'artefact',8) && ischar(ev(k).value) && ...
+                ~strcmpi(ev(k).value,'all') && ...
+                any(ismember(D.selectchannels(ev(k).value),chanind))
+            ev(k).value = 'all';
+        end
+    end
+    Dout = events(Dout,t,ev);
 end

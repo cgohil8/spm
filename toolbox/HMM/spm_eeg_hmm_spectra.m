@@ -66,6 +66,7 @@ for f = 1:G
             Ds = S.states{f};
             if ~isa(Ds,'meeg'), Ds = spm_eeg_load(Ds); end
             a = double(Ds(1:K,:,t))';
+            a(off + find(H.missing{i}),:) = NaN;   % samples the HMM had missing
         end
         yf{j} = y; af{j} = a;
     end
