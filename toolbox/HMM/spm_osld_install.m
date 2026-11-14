@@ -157,7 +157,7 @@ old = cellfun(@getenv,env(:,1),'UniformOutput',false);
 for i = 1:size(env,1), setenv(env{i,1},env{i,2}); end
 restore = onCleanup(@() cellfun(@setenv,env(:,1),old));
 cmd = sprintf('"%s" %s',uv,args);
-if ispc, cmd = ['"' cmd '"']; end
+if ispc, cmd = ['call ' cmd]; end    % a command starting with a quote is altered by cmd.exe
 status = system(cmd,'-echo');
 if status ~= 0
     error('spm_osld:install','The command failed: %s',cmd);
@@ -166,7 +166,7 @@ end
 
 function out = command_output(exe,args)
 cmd = sprintf('"%s" %s',exe,args);
-if ispc, cmd = ['"' cmd '"']; end
+if ispc, cmd = ['call ' cmd]; end    % a command starting with a quote is altered by cmd.exe
 [status,out] = system(cmd);
 if status ~= 0, out = ''; end
 

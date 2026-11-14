@@ -183,10 +183,10 @@ function run_subprocess(python,job)
 script = fullfile(osld_paths().module,'spm_osld.py');
 cmd = sprintf('"%s" "%s" "%s"',python,script,job);
 vars = {'PYTHONNOUSERSITE','1'; 'PYTHONDONTWRITEBYTECODE','1'; 'PYTHONPATH',''; 'PYTHONHOME',''};
-if ~ispc
-    vars = [vars; {'LD_LIBRARY_PATH',''; 'DYLD_LIBRARY_PATH',''}];
+if ispc
+    cmd = ['call ' cmd];                % a command starting with a quote is altered by cmd.exe
 else
-    cmd = ['"' cmd '"'];
+    vars = [vars; {'LD_LIBRARY_PATH',''; 'DYLD_LIBRARY_PATH',''}];
 end
 old = cellfun(@getenv,vars(:,1),'UniformOutput',false);
 for i = 1:size(vars,1), setenv(vars{i,1},vars{i,2}); end
