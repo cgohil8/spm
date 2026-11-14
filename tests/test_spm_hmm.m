@@ -590,6 +590,15 @@ function test_chunk_ownership_against_enumeration(testCase)
     end
 end
 
+function test_compile_function(testCase)
+    % spm_hmm_compile builds the C recursion (here into a temporary folder)
+    testCase.assumeNotEmpty(mex.getCompilerConfigurations('C','Selected'),...
+        'No C compiler is set up for MATLAB.');
+    d = tempname; mkdir(d); testCase.addTeardown(@rmdir,d,'s');
+    evalc('spm_hmm_compile(d)');
+    testCase.verifyEqual(exist(fullfile(d,['forward_backward_mex.' mexext]),'file'),2);
+end
+
 function test_compiled_recursion_matches_matlab(testCase)
     m = recursion_methods();
     testCase.assumeTrue(numel(m) == 2,'The compiled recursion is not available.');

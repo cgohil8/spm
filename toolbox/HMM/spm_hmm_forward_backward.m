@@ -7,8 +7,9 @@ function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb,method)
 %          to one and must NOT be renormalised)
 % lb     - [T x K] log emission potentials, E[log p(y_t | s_t = k)]
 %          (set a row to zero for a missing sample)
-% method - 'auto': the compiled C version (private/forward_backward_mex.c)
-%          if available, otherwise MATLAB; or 'c' or 'matlab'     ['auto']
+% method - 'auto': the compiled C version (private/forward_backward_mex.c,
+%          built with spm_hmm_compile) if available, otherwise MATLAB;
+%          or 'c' or 'matlab'                                     ['auto']
 %
 % gamma  - [T x K] marginal posteriors q(s_t = k)
 % Xi     - [K x K] summed pairwise posteriors sum_t q(s_t-1 = i, s_t = j)

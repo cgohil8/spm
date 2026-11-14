@@ -1,5 +1,6 @@
 #!/usr/bin/env make -f
-# HMM toolbox Makefile called by {SPM}/src/Makefile
+# Builds the HMM toolbox MEX file (not part of the SPM build in src/Makefile)
+# Run 'make' here with mex on the path, or spm_hmm_compile in MATLAB.
 #
 # Chetan Gohil
 # Copyright (C) 2026 NDCN, University of Oxford

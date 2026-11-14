@@ -572,6 +572,7 @@ This avoids HMM-MAR's over-counting, where each subject in a group receives the 
 
   - "Before" is the per-state version: a triangular solve per state for the emissions, a general product per state for $\mathbf S_2$, and the forward–backward recursion in MATLAB.
   - Per $10^6$ samples at $K=12$, $D=80$: emissions 1.54 → 0.88 s, statistics 0.77 → 0.50 s, forward–backward 0.29 → 0.14 s (C; 2–3.5× faster than MATLAB for $K$ from 2 to 16).
+  - The C recursion is not built with the other SPM MEX files: `spm_hmm_compile` (or `make` in `private/`) compiles it once per platform. Its share of the gain, E-step with and without it: $K=4$, $D=20$: 0.37 → 0.22 s; $K=6$, $D=20$: 0.42 → 0.27 s; $K=8$, $D=40$: 0.70 → 0.57 s; $K=12$, $D=80$: 1.83 → 1.70 s. It matters most with few channels, as in AE-HMMs; for stochastic epochs it saves about 20% at $D=20$ and up to 6% at $D=40$–80.
   - All agree with the per-state code to $10^{-13}$ relative.
   - MATLAB already spreads matrix products over all cores, but one process gains only 1.6× from 10 cores, so separate workers help.
   - A stochastic epoch with 1000-sample chunks and 100-sample buffers costs about 1.6 full E-steps: the buffers add 20%, plus per-batch overhead.
@@ -737,7 +738,7 @@ The checks in all ten tables are in `tests/test_spm_hmm.m`, except the nine mark
 | §11a several complete fits | `spm_hmm` (`S.bestof`) |
 | batch interface | `tbx_cfg_hmm` (SPM > Tools > HMM) |
 | all data access (memory or disk) | `private/data_reader` |
-| compiled forward–backward (C) | `private/forward_backward_mex.c`, `private/Makefile`, `private/c_version_available` |
+| compiled forward–backward (C, optional) | `spm_hmm_compile`, `private/forward_backward_mex.c`, `private/Makefile`, `private/c_version_available` |
 | parallel workers | `private/parallel_workers` |
 | simulation | `spm_hmm_simulate` |
 | tests | `tests/test_spm_hmm.m` |
