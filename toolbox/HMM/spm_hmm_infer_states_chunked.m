@@ -54,6 +54,10 @@ for c = 1:C
     pad(c,1:n(c))  = false;
 end
 mx = max(LB,[],2);
+if ~all(isfinite(mx(:)))
+    error('spm_hmm:numerical',['Every state has zero likelihood at %d ' ...
+        'sample(s); check the scale of the data.'],sum(~isfinite(mx(:))));
+end
 B  = exp(LB - mx);
 A  = exp(q.lA);
 

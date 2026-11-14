@@ -296,11 +296,14 @@ the sampling either: non-uniform sampling breaks unbiasedness unless importance 
 - All of these defaults are provisional until they have been checked on real M/EEG data.
 
 **Initialisation.**
-1. Run batch VB (§11) on `initchunks` random chunks, treating each chunk as a separate segment and using the **full-data prior**.
-2. Run one E-step on that subset, then set $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{sub}}\mathbf t_\text{sub}$.
-3. Scale $\mathbf g^{(1)}$ first by (number of segments)/$M$, because every subset chunk counts as a segment start but the data contain only that many true starts.
+1. Draw chunks in random order, skipping chunks with no observed samples, until `initchunks` have been kept (or all $M$ examined). Let $M_\text{exam}$ be the number examined.
+2. Run batch VB (§11) on the kept chunks, treating each chunk as a separate segment and using the **full-data prior**.
+3. Run one E-step on that subset, then set $\boldsymbol\eta=\boldsymbol\eta_0+\frac{M}{M_\text{exam}}\mathbf t_\text{sub}$. The examined chunks are a random sample of all chunks, and the skipped ones contribute no observation statistics.
+4. Before that scaling, rescale two statistics so that after it they equal their known totals:
+   - $\mathbf g^{(1)}$ to sum to the number of segments, because every subset chunk counts as a segment start;
+   - $\boldsymbol\Xi$ to sum to $T-$(number of segments), the number of transitions in the data, because the transitions into each subset chunk's first sample are missing (without this the total would be about $T-M$).
 
-The initial $\boldsymbol\Xi$ is slightly low: the transitions into each subset chunk's first sample are missing, so the rescaled total is about $T-M$ instead of $T-$(number of segments), roughly 0.1% at the defaults. The stochastic updates remove this. With `S.init` given as state probabilities, the posterior is instead initialised from them on all the data, and the random paths use `initdiag` computed from the segment lengths, as in batch mode.
+With `S.init` given as state probabilities, the posterior is instead initialised from them on all the data, and the random paths use `initdiag` computed from the segment lengths, as in batch mode.
 
 ### 8.5 Monitoring and the final free energy
 

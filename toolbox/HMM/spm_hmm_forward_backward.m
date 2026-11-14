@@ -24,6 +24,10 @@ function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb)
 [T,K] = size(lb);
 A     = exp(lA);
 mx    = max(lb,[],2);
+if ~all(isfinite(mx))
+    error('spm_hmm_forward_backward:numerical',['Every state has zero ' ...
+        'likelihood at %d sample(s); check the scale of the data.'],sum(~isfinite(mx)));
+end
 B     = exp(lb - mx);
 
 %-Forward pass

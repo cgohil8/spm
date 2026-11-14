@@ -1152,6 +1152,35 @@ function test_input_errors(testCase)
     testCase.verifyError(@() spm_hmm(randn(10,2),struct('K',2,'T',[4 4],'verbose',false)),'spm_hmm:invalidInput');
 end
 
+function test_stochastic_initialisation_counts(testCase)
+    % with a negligible step size the posterior stays at its initialisation,
+    % whose transition and initial-state counts equal the data totals
+    Y  = simulated_problem(false);
+    T  = cellfun(@(y) size(y,1),Y);
+    sv = struct('chunklength',97,'batchsize',4,'nepochs',1,'initchunks',8,...
+        'delay',1e12,'forget',1);
+    H  = spm_hmm(Y,struct('K',3,'verbose',false,'ninit',1,'inference','stochastic','svi',sv));
+    testCase.verifyEqual(sum(H.q.B(:)) - sum(H.prior.beta0(:)),sum(T) - numel(T),'RelTol',1e-9);
+    testCase.verifyEqual(sum(H.q.a) - sum(H.prior.alpha0),numel(T),'RelTol',1e-9);
+    % the initialisation subset skips chunks with no observed samples
+    Y{1}(1:end-150,:) = NaN; Y{2}(:) = NaN; Y{2}(1:150,:) = randn(150,size(Y{2},2));
+    H  = spm_hmm(Y,struct('K',2,'verbose',false,'ninit',1,'inference','stochastic',...
+        'svi',setfield(sv,'initchunks',2))); %#ok<SFLD>
+    testCase.verifyTrue(isfinite(H.F));
+    testCase.verifyEqual(sum(H.q.B(:)) - sum(H.prior.beta0(:)),sum(T) - numel(T),'RelTol',1e-9);
+end
+
+function test_extreme_data_scale(testCase)
+    y = randn(500,2);
+    for s = [1e153 1e-160]
+        testCase.verifyError(@() spm_hmm({y*s},struct('K',2,'verbose',false)),'spm_hmm:invalidInput');
+        testCase.verifyError(@() spm_hmm({y*s},struct('K',2,'verbose',false,'zeromean',true)),'spm_hmm:invalidInput');
+    end
+    lb = zeros(4,2); lb(3,:) = -Inf;
+    testCase.verifyError(@() spm_hmm_forward_backward(log([0.5;0.5]),log(0.5*ones(2)),lb),...
+        'spm_hmm_forward_backward:numerical');
+end
+
 end % methods (Test)
 end % classdef
 

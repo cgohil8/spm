@@ -27,6 +27,9 @@ function prior = spm_hmm_set_priors(Y,S)
 %
 % Any of alpha0, beta0, m0, kappa0, nu0, Sigma0 or W0 can be given in
 % S.prior to override the default. If W0 is given, Sigma0 is ignored.
+% The per-channel scale of the data (standard deviation, or root mean
+% square for zero-mean models) must lie between 1e-100 and 1e100, so that
+% the sums of squares cannot overflow or underflow.
 %
 % Rationale for the defaults: HMM_maths.md, section 10.
 %__________________________________________________________________________
@@ -64,8 +67,14 @@ mu = c + s1/n;
 if zm
     v = s0/n;                       % second moment about zero
 else
-    v = max(s2/n - (s1/n).^2,0);    % variance
+    v = s2/n - (s1/n).^2;           % variance
 end
+sd = sqrt(max(v,0));
+if any(~isfinite(v) | sd > 1e100 | (sd > 0 & sd < 1e-100))
+    error('spm_hmm:invalidInput',['The data scale (%s per channel) must lie ' ...
+        'between 1e-100 and 1e100; rescale the data.'],mat2str(sd,3));
+end
+v = max(v,0);
 
 prior.K        = K;
 prior.D        = D;

@@ -127,6 +127,9 @@ else
         end
         if F(end) > best.F, best.F = F(end); best.q = q; end
     end
+    if isempty(best.q)
+        error('spm_hmm:numerical','The free energy is not finite for any initialisation.');
+    end
 
     %-Variational Bayes
     %----------------------------------------------------------------------

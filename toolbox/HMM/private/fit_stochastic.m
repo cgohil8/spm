@@ -6,7 +6,9 @@ function [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream)
 %
 % 1. Initialise: batch VB (S.ninit restarts, S.initcyc cycles) on a random
 %    subset of chunks treated as separate segments, with the full-data
-%    prior. Its statistics are rescaled to the size of the full dataset.
+%    prior (chunks with no observed samples are skipped). Its statistics
+%    are rescaled to the size of the full dataset; the transition counts
+%    and initial-state counts to their known totals.
 %    (With S.init a cell array of state probabilities, the posterior is
 %    initialised from them on all the data instead.)
 % 2. For each mini-batch B of chunks (a random partition every epoch):
@@ -34,14 +36,22 @@ if iscell(S.init)
     if S.verbose, fprintf('spm_hmm: initialised from S.init\n'); end
 else
 
-%-Initialise on a subset of chunks
+%-Initialise on a random subset of chunks with observed samples
 %--------------------------------------------------------------------------
-idx  = randperm(stream,M,min(M,o.initchunks));
-Ysub = cell(numel(idx),1);
-for j = 1:numel(idx)
-    c = chunks(idx(j),:);
-    Ysub{j} = R.read(c(1),c(2),c(3));
+perm  = randperm(stream,M);
+ntarg = min(M,o.initchunks);
+Ysub  = cell(ntarg,1);
+m     = 0;                             % chunks kept
+k     = 0;                             % chunks examined
+while m < ntarg && k < M
+    k = k + 1;
+    c = chunks(perm(k),:);
+    y = R.read(c(1),c(2),c(3));
+    if all(any(isnan(y),2)), continue; end
+    m = m + 1;
+    Ysub{m} = y;
 end
+Ysub = Ysub(1:m);
 Si          = S;
 Si.inference = 'batch';
 Si.T        = [];
@@ -57,12 +67,17 @@ Si.prior    = struct('alpha0',prior.alpha0,'beta0',prior.beta0,'m0',prior.m0,...
 Hsub  = spm_hmm(Ysub,Si);
 Finit = Hsub.Finit;
 st    = spm_hmm_infer_states(Ysub,Hsub.q,prior);
-% every subset chunk starts a "segment"; the data have R.nseg starts
-st.g1 = st.g1*R.nseg/M;
-q     = spm_hmm_update_params(st,prior,[],1,M/numel(idx));
+scale = M/k;                           % the k chunks examined are a random sample
+% every subset chunk starts a "segment" (the data have R.nseg starts), and
+% the transitions into the chunk starts are missing (the data have
+% sum(R.T) - R.nseg transitions): rescale both to their totals
+st.g1 = st.g1*R.nseg/(scale*sum(st.g1));
+nx    = sum(st.Xi(:));
+if nx > 0, st.Xi = st.Xi*(sum(R.T) - R.nseg)/(scale*nx); end
+q     = spm_hmm_update_params(st,prior,[],1,scale);
 if S.verbose
     fprintf('spm_hmm: initialised on %d of %d chunks, F(subset) = %.6g\n',...
-        numel(idx),M,max(Finit));
+        m,M,max(Finit));
 end
 end
 
