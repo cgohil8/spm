@@ -22,22 +22,16 @@ function [conn,pct,edges] = spm_hmm_gmm_threshold(conn,S)
 % pct               - [C x K] percentile thresholds
 % edges             - logical, edges kept
 %
-% As osl_dynamics.analysis.connectivity.gmm_threshold / fit_gmm and
-% osl_dynamics.utils.sklearn_wrappers.fit_gaussian_mixture: for each
-% component and state, a two-component Gaussian mixture (gmm_fit_1d, as
-% sklearn GaussianMixture with n_init 10, run to convergence) is fitted to the
-% upper-triangle values; components are ordered by mean ('off' first) and
-% the threshold is, by default, the smallest value above the 'off' mean
-% that is more probably 'on' (or the .pvalue / .onecomponentpct rules).
-% It is converted to a percentile of the values (scipy percentileofscore,
-% kind 'rank') and applied with spm_hmm_threshold_network.
-% The mixture is fitted to convergence. sklearn's default tolerance (1e-3,
-% used by osl-dynamics) can stop EM after a few iterations, far from the
-% maximum likelihood, at a point that depends on its random k-means start;
-% set .gmmtol = 1e-3 to mimic it. With both converged the thresholds agree.
-% .meanweights are used both for the fit and when applying the threshold,
-% and with .positiveonly the percentile is taken over all values (as
-% osl-dynamics since branch fix-gmm-convergence; before, it did neither).
+% As osl_dynamics.analysis.connectivity.gmm_threshold: for each component
+% and state, a two-component Gaussian mixture (gmm_fit_1d, 10 starts) is
+% fitted to the upper-triangle values; components are ordered by mean
+% ('off' first) and the threshold is, by default, the smallest value above
+% the 'off' mean that is more probably 'on' (or the .pvalue /
+% .onecomponentpct rules). It is converted to a percentile of the values
+% (scipy percentileofscore, kind 'rank') and applied with
+% spm_hmm_threshold_network. .meanweights are used both for the fit and
+% when applying the threshold, and with .positiveonly the percentile is
+% taken over all values.
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -117,7 +111,7 @@ elseif ~isempty(S.pvalue)
     end
     dX = max(Xs)/100;
     xg = mu(1):dX:max(Xs)+dX;
-    xg = xg(xg < max(Xs) + dX);                          % numpy arange end
+    xg = xg(xg < max(Xs) + dX);                          % end point excluded
     a0 = wo(1)*exp(-(xg - mu(1)).^2/(2*sd(1)^2))/(sqrt(2*pi)*sd(1));
     [~,j]  = min(abs(a0 - S.pvalue/numel(Xs)));
     [~,ix] = min(abs(Xs - xg(j)));

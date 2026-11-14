@@ -172,9 +172,8 @@ function test_recovers_simulated_states(testCase)
 end
 
 function test_recovers_zero_mean_states(testCase)
-    % States that differ only in covariance overlap more, so compare with
-    % (i) a fit initialised at the true state sequence and (ii) decoding
-    % with the true parameters, rather than with a fixed accuracy.
+    % compare with a fit initialised at the true state sequence and with
+    % decoding using the true parameters
     [Y,s,~,~,M] = simulated_problem(true);
     S   = struct('K',3,'zeromean',true,'verbose',false);
     HMM = spm_hmm(Y,S);
@@ -557,8 +556,8 @@ function test_bestof_keeps_highest_free_energy(testCase)
 end
 
 function test_initialisations_do_not_depend_on_order(testCase)
-    % initialisation r draws from its own substream, so parallel workers
-    % give the same result: the first restarts of a longer run match
+    % each initialisation has its own substream: the first restarts of a
+    % longer run match
     Y  = simulated_problem(false);
     S  = struct('K',3,'verbose',false,'initcyc',2,'maxcyc',1,'seed',3);
     H3 = spm_hmm(Y,setfield(S,'ninit',3)); %#ok<SFLD>
@@ -687,8 +686,7 @@ function test_envelope_of_sinusoid(testCase)
     D  = chanlabels(D,1:2,{'A','B'}); D = chantype(D,1:2,'LFP');
     D  = fsample(D,fs); D = type(D,'continuous'); save(D);
     Do = spm_eeg_hmm_envelope(struct('D',fullfile(D),'freq',[5 40]));
-    % the FFT-based Hilbert transform spreads the filter transients at the
-    % ends of the record (about 2% at 2 s, 0.03% at the centre here)
+    % centre of the record, away from the edge transients
     e  = Do(:,2250:2750,1);
     testCase.verifyEqual(e(1,:),3*ones(1,501),'RelTol',1e-3);
     testCase.verifyEqual(e(2,:),0.5*ones(1,501),'RelTol',1e-3);
@@ -710,7 +708,7 @@ function test_ae_hmm_recovers_amplitude_states(testCase)
     % states differ only in the 10 Hz oscillation amplitude of each channel
     [file,s] = amplitude_states_dataset(testCase);
     Do  = spm_eeg_hmm_envelope(struct('D',file,'freq',[5 15],'window',5));
-    % this problem has many local optima: 10 initialisations, not 5
+    % many local optima
     HMM = spm_eeg_hmm(struct('D',fullfile(Do),'K',3,'lifetime',0.5,'write',false,...
         'hmm',struct('verbose',false,'ninit',10)));
     testCase.verifyFalse(HMM.zeromean);
@@ -1025,9 +1023,8 @@ function test_network_thresholds(testCase)
     testCase.verifyEqual(e(ut),c(ut) > q);
     testCase.verifyEqual(t(e),c(e)); testCase.verifyTrue(all(t(~e) == 0));
     testCase.verifyEqual(e,e');
-    % the Gaussian mixture separates the strong edges. As in osl-dynamics,
-    % the threshold (the weakest 'on' edge) is turned into a rank
-    % percentile and back, which drops that edge itself
+    % the Gaussian mixture keeps the strong edges; the threshold is applied
+    % as a rank percentile, which drops the weakest strong edge
     [~,~,eg] = spm_hmm_gmm_threshold(c,struct());
     expect = strong; [~,w] = min(c(strong)); sv = find(strong); expect(sv(w)) = false;
     testCase.verifyEqual(eg(ut),expect(ut));
@@ -1071,7 +1068,7 @@ function test_parcel_maps_and_plots(testCase)
 end
 
 % -------------------------------------------------------------------------
-% Fixes from code review
+% Edge cases, input validation and plots
 % -------------------------------------------------------------------------
 function test_stochastic_with_user_initialisation(testCase)
     [Y,s] = simulated_problem(false);

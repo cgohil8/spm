@@ -38,8 +38,8 @@ function [flips,info] = spm_hmm_sign_flip(Y,S)
 % - twostage: a dataset template is built (spm_hmm_build_template); with
 %   S.template, the flips g aligning the dataset template to S.template
 %   are found; every session is aligned to the dataset template and its
-%   flips multiplied by g. Recommended when S.template comes from another
-%   dataset (e.g. a pre-trained model).
+%   flips multiplied by g. For an S.template from another dataset (e.g. a
+%   pre-trained model).
 %__________________________________________________________________________
 
 % Chetan Gohil

@@ -10,12 +10,9 @@ function n = parallel_workers(use,R,task)
 % No pool is started, and 0 is returned:
 % - without the Parallel Computing Toolbox, or with no open pool (inside a
 %   parallel worker gcp is empty, so nested loops run serially);
-% - for a thread-based pool when the data are read from disk, because the
-%   SPM file reader is a MEX file, which thread-based workers cannot run;
+% - for a thread-based pool when the data are read from disk;
 % - for 'segments' when the data are held in memory and the pool is
-%   process-based, because every E-step would then copy the data to the
-%   workers, which costs more than it saves (thread-based workers share
-%   the memory, so they are used).
+%   process-based.
 %__________________________________________________________________________
 
 % Chetan Gohil

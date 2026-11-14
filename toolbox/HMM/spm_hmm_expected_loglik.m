@@ -13,8 +13,7 @@ function lb = spm_hmm_expected_loglik(Y,q)
 %
 % inv(W_k) = R_k'*R_k, so (y - m_k)' W_k (y - m_k) = ||(y - m_k)'*inv(R_k)||^2.
 % One matrix product, in blocks of rows, gives the terms of all states.
-% The data are first centred on the mean of the state means, which avoids
-% cancellation for data with a large offset.
+% The data are first centred on the mean of the state means.
 %__________________________________________________________________________
 
 % Chetan Gohil

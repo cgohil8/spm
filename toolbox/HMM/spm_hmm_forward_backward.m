@@ -16,8 +16,8 @@ function [gamma,Xi,logZ] = spm_hmm_forward_backward(lpi,lA,lb,method)
 % logZ   - log normaliser of q(s_1:T), i.e.
 %          log sum_s exp(lpi(s_1) + sum_t lA(s_t-1,s_t) + sum_t lb(t,s_t))
 %
-% Scaled recursion with per-sample max subtraction: no clamping, and logZ
-% is exact. See toolbox/HMM/doc/HMM_maths.md, section 4.
+% Scaled recursion with per-sample max subtraction.
+% See toolbox/HMM/doc/HMM_maths.md, section 4.
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -37,7 +37,7 @@ if use_c
         [gamma,Xi,logZ] = forward_backward_mex(lpi,lA,lb);
         return
     catch err
-        % MEX files cannot run on thread-based parallel workers
+        % otherwise fall back to the MATLAB code (e.g. on thread-based workers)
         if startsWith(err.identifier,'spm_hmm') || strcmpi(method,'c'), rethrow(err); end
     end
 end

@@ -1,7 +1,7 @@
 function q = percentile_linear(x,p)
 % Percentile with numpy's default ('linear') definition, ignoring NaN
 % The value at fractional index (n-1)*p/100 of the sorted values, linearly
-% interpolated (numpy.nanpercentile; MATLAB's prctile differs).
+% interpolated (as numpy.nanpercentile).
 %__________________________________________________________________________
 
 % Chetan Gohil

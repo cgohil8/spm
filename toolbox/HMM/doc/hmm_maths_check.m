@@ -1,5 +1,5 @@
 function hmm_maths_check
-% Numerical verification of every formula planned for the VB-HMM maths note.
+% Numerical checks of the formulae in the VB-HMM maths note.
 % Parameterisation: Wishart W(Lambda | W, nu) with E[Lambda] = nu*W (W = scale).
 % Normal-Wishart: mu | Lambda ~ N(m, (kappa*Lambda)^-1).
 
@@ -19,7 +19,7 @@ lq = zeros(nS,1); lp = lq;
 for s=1:nS, lq(s)=wishlogpdf(Lam(:,:,s),W,nu); lp(s)=wishlogpdf(Lam(:,:,s),W0,nu0); end
 report('KL Wishart', mean(lq-lp), klW(nu,W,nu0,W0), std(lq-lp)/sqrt(nS));
 report('spm_kl_wishart (inverse-scale args)', spm_kl_wishart(nu,inv(W),nu0,inv(W0)), klW(nu,W,nu0,W0), 0);
-% hypothesis: spm_kl_wishart uses E_p[log|L|] where E_q[log|L|] is needed in the cross-entropy term
+% spm_kl_wishart with E_q[log|L|] in place of E_p[log|L|] in the cross-entropy term
 Lq = Elogdet(nu,W); Lp = Elogdet(nu0,W0);
 report('spm_kl_wishart + 0.5(nu0-D-1)(Lp-Lq)', spm_kl_wishart(nu,inv(W),nu0,inv(W0)) + 0.5*(nu0-D-1)*(Lp-Lq), klW(nu,W,nu0,W0), 0);
 
@@ -87,7 +87,7 @@ fprintf('\n=== D. Batch VB: F monotone after every E- and M-step (general F) ===
 for zm = [0 1]
     [Y,segs] = simhmm(3,4,[1500 1000 700],zm);
     pr = defaultprior(3,4); pr.zeromean = zm; pr.m0 = zm*0 + (1-zm)*mean(Y)'; if zm, pr.m0=zeros(4,1); end
-    % init: random sticky one-hot path -> M-step
+    % initialise: M-step from a random one-hot path
     g = zeros(size(Y,1),3); g(sub2ind(size(g),(1:size(Y,1))',randi(3,size(Y,1),1))) = 1;
     st = suffstats(Y,g,zeros(3),zeros(1,3)); st.Xi = ones(3); st.g1 = ones(1,3);
     q = mstep(st,pr);
@@ -120,7 +120,7 @@ fprintf('  pad with identity transitions   : max|dgamma| = %.3e, dlogZ = %.3e  (
 fprintf('\n=== F. Chunking with buffers vs full forward-backward ===\n');
 [Y,segs,qtrue] = simhmm(4,5,20000,0); %#ok<ASGLU>
 pr = defaultprior(4,5); pr.m0 = mean(Y)';
-q = qtrue; % use a good posterior
+q = qtrue; % posterior from the true states
 [lpi,lA,lb] = tilde(Y,q);
 [gfull,Xfull,~,xisfull] = fb(lpi,lA,lb); %#ok<ASGLU>
 Ahat = exp(lA); Ahat = Ahat./sum(Ahat,2); [V,E] = eig(Ahat'); [~,i]=max(real(diag(E))); pst = real(V(:,i))'/sum(real(V(:,i)));

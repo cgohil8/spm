@@ -17,10 +17,8 @@ function F = spm_hmm_plot_spectra(spec,S)
 %
 % F               - figure handle
 %
-% One line per state: the PSD of each session averaged over channels, then
-% over sessions (unweighted), with the standard error over sessions shaded
-% (G > 1) and matplotlib's tab10 state colours, as in the osl-dynamics
-% tutorials.
+% One line per state: the PSD averaged over channels, then over sessions,
+% with the standard error over sessions shaded (G > 1).
 %__________________________________________________________________________
 
 % Chetan Gohil

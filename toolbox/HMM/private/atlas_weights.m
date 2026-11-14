@@ -10,7 +10,7 @@ function [w,nparc] = atlas_weights(file,mni)
 %
 % As osl_dynamics.meeg.parcellation._sample_parcellation: no resampling,
 % each point takes the value of its nearest atlas voxel (ties at exactly
-% half a voxel rounded to even, as numpy.rint).
+% half a voxel rounded to even).
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -19,8 +19,7 @@ function [w,nparc] = atlas_weights(file,mni)
 
 A     = read_atlas(file);
 nparc = A.P;
-% 0-based voxel coordinates (as nibabel's affine), rounded half to even
-% (numpy.rint), then 1-based indices
+% 0-based voxel coordinates, rounded half to even, then 1-based indices
 A0    = A.mat*[eye(3) ones(3,1); 0 0 0 1];        % 0-based voxel-to-mm
 iA    = inv(A0);
 v     = mni*iA(1:3,1:3)' + iA(1:3,4)';

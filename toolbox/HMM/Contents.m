@@ -2,7 +2,7 @@
 %
 % Variational Bayesian hidden Markov model with multivariate Gaussian
 % observations (Normal-Wishart priors; optional zero-mean states).
-% Maths and design: toolbox/HMM/doc/HMM_maths.md
+% Maths: toolbox/HMM/doc/HMM_maths.md
 %
 %   spm_hmm                  - fit the model (main function)
 %   spm_eeg_hmm              - fit the model to M/EEG datasets

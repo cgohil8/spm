@@ -27,8 +27,8 @@ function [R,info] = spm_hmm_tde_pca(Y,S)
 %
 % The embedded data are never stored: each block is embedded, projected
 % and standardised as it is read. The PCA uses the covariance of the
-% embedded data pooled over all segments. As in HMM-MAR and osl-dynamics
-% (TDE-HMM), the HMM is then usually fitted with zero-mean states.
+% embedded data pooled over all segments. The HMM is then usually fitted
+% with zero-mean states (TDE-HMM).
 %__________________________________________________________________________
 
 % Chetan Gohil

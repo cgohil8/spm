@@ -18,12 +18,11 @@ function [Dout,M] = spm_eeg_hmm_orthogonalise(S)
 % maintain_magnitudes=True (Colclough et al. 2015, NeuroImage 117:439),
 % computed on the good samples of the good trials, concatenated (A):
 %   D = diag(sqrt(diag(A'*A))),  [U,s,V] = svd(A*D),  out = U*V'*D
-% i.e. out = A*M with M = D*V*diag(1./s)*V'*D. M is applied to every sample
-% (osl-dynamics omits bad samples). Each channel keeps its original norm over
-% the good samples and the channels become exactly uncorrelated (zero
-% inner products). The data are not demeaned first (osl-dynamics
-% orthogonalises demeaned parcel data; spm_eeg_hmm_parcellate output is
-% demeaned). An error is raised if A is rank deficient.
+% i.e. out = A*M with M = D*V*diag(1./s)*V'*D. M is applied to every
+% sample. Each channel keeps its original norm over the good samples and
+% the channels have zero inner products. The data are not demeaned first
+% (spm_eeg_hmm_parcellate output is demeaned). An error is raised if A is
+% rank deficient.
 %__________________________________________________________________________
 
 % Chetan Gohil

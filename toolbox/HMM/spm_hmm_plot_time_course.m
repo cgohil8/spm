@@ -20,9 +20,8 @@ function F = spm_hmm_plot_time_course(states,S)
 % F               - figure handle
 %
 % As osl_dynamics.utils.plotting.plot_alpha: the state probabilities of
-% each sample are stacked (summing to one), with matplotlib's tab10 state
-% colours and a colour bar labelled with the state numbers. A state
-% sequence is shown as one-hot probabilities.
+% each sample are stacked, with a colour bar labelled with the state
+% numbers. A state sequence is shown as one-hot probabilities.
 %__________________________________________________________________________
 
 % Chetan Gohil

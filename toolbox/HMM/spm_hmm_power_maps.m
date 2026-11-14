@@ -15,8 +15,8 @@ function P = spm_hmm_power_maps(spec,S)
 % As osl_dynamics.analysis.power.variance_from_spectra: with components,
 % P = comp*psd / sum(comp) (a component-weighted mean over frequency);
 % otherwise the mean, sum or integral (sum * df) over f >= fmin, f <= fmax.
-% To show maps relative to the mean over states (as osl-dynamics plots
-% them), use spm_hmm_plot_power_map with S.subtractmean.
+% To show maps relative to the mean over states, use
+% spm_hmm_plot_power_map with S.subtractmean.
 %__________________________________________________________________________
 
 % Chetan Gohil

@@ -29,23 +29,21 @@ function HMM = spm_hmm(Y,S)
 %   .tol       convergence: change in F < tol*|F|                   [1e-7]
 %   .seed      random seed (the global random stream is not used)      [0]
 %              Initialisation r draws from substream r of an mrg32k3a
-%              stream with this seed, so results do not depend on the
-%              order or number of parallel workers.
+%              stream with this seed; results do not depend on the
+%              number of parallel workers.
 %   .bestof    number of complete fits (each with its own initialisations
 %              and seed S.seed + r - 1); the one with the highest final F
 %              is returned                                             [1]
 %   .parallel  use the open parallel pool, if there is one (Parallel
 %              Computing Toolbox; no pool is started)               [true]
-%              The initialisations and the complete fits run in parallel,
-%              and the segments of each E-step are shared between the
-%              workers. Use a thread-based pool (parpool('Threads')) for
-%              data in memory: a process-based pool would copy the data
-%              every E-step, so it only runs the initialisations and fits
-%              in parallel. Use a process-based pool for data on disk
-%              (e.g. spm_hmm_meeg_reader), which thread-based workers
-%              cannot read. Workers of a process
-%              pool use one computational thread by default; with fewer
-%              workers than cores, more threads can be given with
+%              The initialisations and the complete fits run in parallel.
+%              The segments of each E-step are shared between the workers
+%              of a thread-based pool (parpool('Threads')) for data in
+%              memory, or of a process-based pool for data on disk (e.g.
+%              spm_hmm_meeg_reader). A thread-based pool is not used for
+%              data on disk. Workers of a process pool use one
+%              computational thread by default; with fewer workers than
+%              cores, more threads can be given with
 %              parfevalOnAll(@maxNumCompThreads,0,n). Results agree with
 %              serial runs to rounding error.
 %   .verbose   print progress                                       [true]
@@ -102,8 +100,7 @@ R = data_reader(Y,S.T);
 %-Several complete fits: keep the one with the highest F
 %--------------------------------------------------------------------------
 if S.bestof > 1
-    % fits run without state probabilities, which are computed once for
-    % the best fit (from its final posterior, as the fit itself would)
+    % state probabilities are computed only for the best fit
     nw = parallel_workers(S.parallel,R,'fits');
     nf = S.bestof;
     Sr = S; Sr.bestof = 1; Sr.T = []; Sr.keepgamma = false;
@@ -193,9 +190,8 @@ HMM.options  = S;
 
 %==========================================================================
 function [q,F,st,gamma,KL] = run_variational_bayes(R,q,prior,maxcyc,tol,verbose,keepgamma,nw)
-% Alternate E- and M-steps; F is evaluated after each E-step, so the
-% returned q, gamma and F are mutually consistent. nw workers share the
-% segments of each E-step.
+% Alternate E- and M-steps, with F evaluated after each E-step. nw workers
+% share the segments of each E-step.
 F = zeros(1,maxcyc);
 for it = 1:maxcyc
     if keepgamma
@@ -304,7 +300,6 @@ s.Substream = r;
 %==========================================================================
 function i = first_best(F)
 % index of the first F within rounding error of the largest (NaN is never
-% chosen): fits that reach the same optimum with permuted state labels
-% then give the same choice in serial and parallel runs
+% chosen)
 Fmax = max(F);
 i    = find(F >= Fmax - 1e-12*abs(Fmax),1);

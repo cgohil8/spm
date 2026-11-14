@@ -15,9 +15,8 @@ function [W,H,niter] = spm_hmm_nmf(X,k,S)
 % (Frobenius loss, solver 'cd', no regularisation, shuffle=False, init
 % None -> 'nndsvda' when k <= min(n,m)):
 % - NNDSVDA initialisation (Boutsidis & Gallopoulos 2008) from the leading
-%   k singular triplets; entries below 1e-6 are set to mean(X(:)). sklearn
-%   uses a randomised SVD (seeded in osl-dynamics' decompose_spectra); here
-%   the exact truncated SVD is used, which it approximates.
+%   k singular triplets of the exact SVD; entries below 1e-6 are set to
+%   mean(X(:)).
 % - Each iteration updates W then H, one component at a time (Cichocki &
 %   Phan 2009): for component t, grad = W*HHt(:,t) - XHt(:,t),
 %   W(:,t) = max(W(:,t) - grad/HHt(t,t), 0); the violation is the sum of

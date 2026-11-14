@@ -1,18 +1,16 @@
 function plot_violins(ax,X,col)
-% Violin plots of the columns of X (NaN ignored), as seaborn's violinplot
-% with osl-dynamics' settings (inner='quart', cut=0)
+% Violin plots of the columns of X (NaN ignored)
 %
 % ax   - axes
 % X    - [n x K] values; column k is drawn at x = k
 % col  - [K x 3] colours
 %
-% Each column's density is a Gaussian kernel density estimate with Scott's
-% bandwidth (scipy.stats.gaussian_kde: std(x)*n^(-1/5)), evaluated on 100
-% points between the smallest and largest value. The densities of all
-% violins are divided by the largest of them (density_norm='area', so all
-% violins have the same area) and drawn with half-width 0.4. Dashed lines
-% mark the quartiles (numpy percentiles), across the violin. A column with
-% one distinct value is drawn as a short line.
+% As seaborn's violinplot with inner='quart', cut=0. Each column's density
+% is a Gaussian kernel density estimate with bandwidth std(x)*n^(-1/5),
+% evaluated on 100 points between the smallest and largest value. The
+% densities of all violins are divided by the largest of them and drawn
+% with half-width 0.4. Lines across the violin mark the quartiles. A column
+% with one distinct value is drawn as a short line.
 %__________________________________________________________________________
 
 % Chetan Gohil

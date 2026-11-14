@@ -10,11 +10,8 @@ function spm_hmm_compile(outdir)
 % up for MATLAB first (mex -setup C; on a Mac this needs Xcode).
 %
 % Compiling is optional: without the compiled file the toolbox uses the
-% MATLAB recursion, with the same results. The compiled file makes each
-% E-step about 1.2-1.7 times faster with few channels (e.g. D <= 40) and
-% gains little with many (see HMM_maths.md, section 12). It is not built
-% with the other SPM MEX files, so it is compiled here, once per platform.
-% From a shell, 'make' in toolbox/HMM/private does the same build.
+% MATLAB recursion, with the same results. From a shell, 'make' in
+% toolbox/HMM/private does the same build.
 %__________________________________________________________________________
 
 % Chetan Gohil

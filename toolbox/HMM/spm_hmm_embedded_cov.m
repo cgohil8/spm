@@ -11,13 +11,10 @@ function C = spm_hmm_embedded_cov(Y,S)
 %   .segments     segments of Y to use                                 [all]
 %   .missing      cell array of [T_i x 1] masks of missing samples, in
 %                 addition to NaN rows (e.g. bad samples given as values,
-%                 so that the band-pass filter runs through them, as
-%                 osl-dynamics does)                                    [{}]
+%                 which the band-pass filter runs through)              [{}]
 %   .bands        [n_bands x 2] band edges in Hz: one covariance per band
-%                 of the band-pass filtered data (osl-dynamics
-%                 calc_cov_mne_raw(frequency_bands=...), which uses MNE's
-%                 default FIR filter; here the zero-phase Butterworth of
-%                 spm_eeg_filter, order 5)                              [[]]
+%                 of the band-pass filtered data (zero-phase Butterworth,
+%                 order 5)                                              [[]]
 %   .fs           sampling frequency (Hz), needed with .bands
 %
 % C             - [D*E x D*E] covariance, or [n_bands x D*E x D*E]
@@ -27,7 +24,7 @@ function C = spm_hmm_embedded_cov(Y,S)
 % blocks of E columns with the most recent sample first; the embedded
 % columns are standardised (population SD) and the covariance normalised
 % by n-1. Embedding is done within segments, and rows that use a missing
-% sample are left out (osl-dynamics drops bad segments before embedding).
+% sample are left out.
 % For band covariances, missing samples given as NaN are set to zero
 % before filtering.
 %__________________________________________________________________________
@@ -91,7 +88,7 @@ for b = 1:nb
     Cb = (reshape(s2(b,:,:),N,N) - n(b)*(mu'*mu))/(n(b)-1);
     Cb = (Cb + Cb')/2;
     if S.standardise
-        sd = sqrt(diag(Cb)*(n(b)-1)/n(b));     % population SD, as numpy
+        sd = sqrt(diag(Cb)*(n(b)-1)/n(b));     % population SD
         Cb = Cb./(sd*sd');
     end
     C(b,:,:) = Cb;

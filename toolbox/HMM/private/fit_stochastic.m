@@ -15,7 +15,7 @@ function [q,Fhist,Finit,rho] = fit_stochastic(R,S,prior,stream)
 %       t_hat = (M/|B|) * statistics owned by the chunks in B
 %       eta   = (1 - rho_i)*eta + rho_i*(eta_0 + t_hat)
 %       rho_i = (i + delay)^(-forget)
-%    M is the number of chunks; uniform sampling makes t_hat unbiased.
+%    M is the number of chunks.
 % See HMM_maths.md, sections 8 and 11.
 %__________________________________________________________________________
 

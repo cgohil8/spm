@@ -14,10 +14,10 @@ function F = spm_hmm_plot_network(conn,atlas,S)
 %
 % F          - figure handle
 %
-% As osl-dynamics' connectivity.save (nilearn plot_connectome with
-% display_mode 'xz'): nodes at the parcel centres (black), an edge for every
-% non-zero entry of the upper triangle, coloured on a symmetric red-blue
-% scale. The outline is the projection of the cortical mesh.
+% As osl-dynamics' connectivity.save: nodes at the parcel centres (black),
+% an edge for every non-zero entry of the upper triangle, coloured on a
+% symmetric red-blue scale. The glass brain is the silhouette and projection of the cortical
+% mesh.
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -52,8 +52,12 @@ nv = numel(S.views);
 for a = 1:nv
     d  = axs.(S.views(a));
     ax = subplot(1,nv,a); hold(ax,'on');
-    patch(ax,'Faces',fc,'Vertices',vtx(:,d),'FaceColor',[0.5 0.5 0.5],...
-        'FaceAlpha',0.01,'EdgeColor','none');
+    x  = vtx(:,d(1)); y = vtx(:,d(2));
+    b  = boundary(x,y,0.9);                              % silhouette
+    fill(ax,x(b),y(b),[0.96 0.96 0.96],'EdgeColor','none','Tag','brain');
+    patch(ax,'Faces',fc,'Vertices',vtx(:,d),'FaceColor',[0.4 0.4 0.4],...
+        'FaceAlpha',0.02,'EdgeColor','none','Tag','brain');
+    plot(ax,x(b),y(b),'-','Color',[0.45 0.45 0.45],'LineWidth',1,'Tag','brain');
     for e = 1:numel(v)
         k = 1 + round((v(e) - cl(1))/(cl(2) - cl(1))*255);
         k = min(max(k,1),256);

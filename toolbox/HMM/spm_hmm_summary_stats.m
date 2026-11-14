@@ -28,7 +28,6 @@ function stats = spm_hmm_summary_stats(path,K,fs,missing,group)
 % Missing samples are not observed time: each segment is split at missing
 % samples, no visit or interval spans a gap, and missing samples are
 % excluded from the fractional occupancy and switching-rate denominators.
-% With no missing samples the results equal those of osl-dynamics.
 %__________________________________________________________________________
 
 % Chetan Gohil

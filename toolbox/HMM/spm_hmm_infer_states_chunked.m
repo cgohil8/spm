@@ -23,7 +23,7 @@ function [st,gamma] = spm_hmm_infer_states_chunked(Y,chunks,q,prior,method)
 % (row-normalised) expected transitions otherwise. The compiled recursion
 % runs window by window; the MATLAB code runs all windows together, with
 % windows shorter than the longest padded with identity transitions and no
-% observations, which leaves the result unchanged.
+% observations.
 % See HMM_maths.md, sections 7 and 8.3.
 %__________________________________________________________________________
 
@@ -63,7 +63,7 @@ if use_c
         [st,gamma] = owned_stats_by_window(yw,lball,e,chunks,q,prior,log(P0(:)));
         return
     catch err
-        % MEX files cannot run on thread-based parallel workers
+        % otherwise fall back to the MATLAB code (e.g. on thread-based workers)
         if startsWith(err.identifier,'spm_hmm') || strcmpi(method,'c'), rethrow(err); end
     end
 end

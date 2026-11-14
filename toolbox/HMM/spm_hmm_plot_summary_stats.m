@@ -14,9 +14,8 @@ function F = spm_hmm_plot_summary_stats(stats,S)
 %
 % F               - figure handle
 %
-% As osl_dynamics.utils.plotting.plot_hmm_summary_stats: four panels of
-% violins over sessions, one per state, with matplotlib's tab10 colours
-% (see plot_violins for the density and the quartile lines). States never
+% As osl_dynamics.utils.plotting.plot_hmm_summary_stats: four panels with
+% one violin per state over sessions (see plot_violins). States never
 % visited in a session (NaN lifetime or interval) are left out of those
 % violins.
 %__________________________________________________________________________

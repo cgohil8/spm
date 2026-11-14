@@ -34,9 +34,8 @@ function spec = spm_hmm_multitaper(Y,alpha,S)
 % Frequencies are f >= fmin and f <= fmax of (0:nfft/2)*fs/nfft.
 % Coherence is |Pxy|/sqrt(Pxx*Pyy), with NaN set to 0.
 % Missing samples: the data are standardised over the observed samples,
-% then data and alpha are set to zero at missing samples, so the scaling
-% T/sum(alpha.^2) (T includes missing samples) compensates for the zeroed
-% time. osl-dynamics has no missing samples.
+% then data and alpha are set to zero at missing samples (T in the scaling
+% includes them).
 %__________________________________________________________________________
 
 % Chetan Gohil

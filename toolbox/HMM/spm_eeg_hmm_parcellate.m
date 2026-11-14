@@ -12,8 +12,7 @@ function [Dout,info] = spm_eeg_hmm_parcellate(S)
 %   .modality      beamformer modality, e.g. 'MEG'      [first in BF.inverse]
 %   .method        'pca' or 'centroid' (see spm_hmm_parcel_weights)  ['pca']
 %   .weightnorm    'unit-noise-gain': scale each source filter to unit norm
-%                  (unit-noise-gain beamformer for white sensor noise, as
-%                  osl-dynamics parcellates weight-normalised filters);
+%                  (unit-noise-gain beamformer for white sensor noise);
 %                  'none': use the DAiSS (unit-gain) filters ['unit-noise-gain']
 %   .orthogonalise symmetric orthogonalisation of the parcels afterwards
 %                  (spm_eeg_hmm_orthogonalise)                       [false]
@@ -34,9 +33,9 @@ function [Dout,info] = spm_eeg_hmm_parcellate(S)
 % samples of the good trials; parcel filters are V'*F and parcel time
 % courses V'*F*(y - mean(y)), with the mean over the same good samples.
 % The atlas is sampled at the source positions by nearest neighbour.
-% Unlike osl-dynamics, which zero-fills bad samples, the filters are
-% applied to every sample and artefact events are kept; an artefact on any
-% beamformer sensor applies to all parcels (its event value becomes 'all').
+% The filters are applied to every sample and artefact events are kept; an
+% artefact on any beamformer sensor applies to all parcels (its event value
+% becomes 'all').
 %
 % Atlases are not distributed with SPM. Parcellations for MEG (e.g.
 % Glasser52, atlas-Glasser_nparc-52_space-MNI_res-8x8x8.nii.gz, CC BY 4.0)
@@ -103,7 +102,7 @@ for t = trials
 end
 if n < 2, error('spm_hmm:invalidInput','Too few good samples.'); end
 mu = s1/n;
-C  = s2/n - mu*mu';                                 % biased, as np.cov(bias=True)
+C  = s2/n - mu*mu';                                 % biased
 
 %-Parcel weights and filters
 %--------------------------------------------------------------------------
@@ -145,8 +144,7 @@ end
 
 %==========================================================================
 function Dout = parcel_artefact_events(Dout,D,chanind)
-% Every parcel combines all beamformer sensors, so an artefact on any of
-% them marks the sample bad for all parcels: such events get value 'all'
+% Artefact events on any beamformer sensor get value 'all'
 for t = 1:D.ntrials
     ev = D.events(t);
     if iscell(ev), ev = ev{1}; end

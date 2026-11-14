@@ -25,8 +25,8 @@ function V = spm_hmm_parcel_weights(C,w,method,pos,centres)
 % weighted sources, with standard deviation equal to the |u|-weighted mean
 % of the source standard deviations and a positive mean loading.
 % 'centroid', as osl-dynamics _get_parcel_data_centroid: the source nearest
-% to the parcel centre, unscaled (with atlas centres, as osl-dynamics, a
-% parcel needs no source of its own).
+% to the parcel centre, unscaled (with atlas centres, a parcel needs no
+% source of its own).
 %__________________________________________________________________________
 
 % Chetan Gohil

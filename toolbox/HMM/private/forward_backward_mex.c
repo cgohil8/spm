@@ -2,10 +2,9 @@
  * Forward-backward recursion for the variational posterior over states
  * FORMAT [gamma,Xi,logZ] = forward_backward_mex(lpi,lA,lb,xirange)
  *
- * C implementation of the recursion in spm_hmm_forward_backward.m, which
- * calls it when it is compiled (the MATLAB code is used otherwise). The
- * arithmetic is the same: B = exp(lb - max(lb,[],2)), A = exp(lA), a
- * scaled forward pass, a backward pass, and Xi summed over time.
+ * C implementation of the recursion in spm_hmm_forward_backward.m:
+ * B = exp(lb - max(lb,[],2)), A = exp(lA), a scaled forward pass, a
+ * backward pass, and Xi summed over time.
  *
  * lpi    - [K x 1] log initial-state potentials
  * lA     - [K x K] log transition potentials (not renormalised)

@@ -18,7 +18,7 @@ function [conn,edges] = spm_hmm_threshold_network(conn,S)
 %
 % As osl_dynamics.analysis.connectivity.threshold: after the optional mean
 % subtraction and absolute value, an edge is kept if its value exceeds the
-% given percentile (numpy linear interpolation) of the off-diagonal
+% given percentile (linear interpolation) of the off-diagonal
 % values; for symmetric networks (to 1e-6) only the upper triangle is used
 % and mirrored. The mean is not subtracted when there is one state.
 %__________________________________________________________________________

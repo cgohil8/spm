@@ -27,7 +27,7 @@ function [Dout,flips,info] = spm_eeg_hmm_sign_flip(S)
 % As osl_dynamics.data.sign_flipping.sign_flip_mne_raw /
 % Data.align_channel_signs. Each dataset is one session (all its good
 % trials). Bad samples are left out of the covariances; band-pass filters
-% (with .bands) run through them, as in osl-dynamics.
+% (with .bands) run through them.
 %__________________________________________________________________________
 
 % Chetan Gohil

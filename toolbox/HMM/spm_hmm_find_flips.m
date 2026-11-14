@@ -13,17 +13,14 @@ function [flips,corr] = spm_hmm_find_flips(C,Ct,nembed,nrandom)
 %
 % As osl_dynamics.data.sign_flipping.find_flips. The objective is the
 % Pearson correlation between the entries of the flipped C and of Ct that
-% lie at least E places above the diagonal (pooled over bands), which
-% skips the within-channel entries that do not depend on the signs. It
+% lie at least E places above the diagonal (pooled over bands). It
 % depends on the flips f only through P = sum_{p<q} f_p f_q A_pq and
 % Q = sum_{p<q} f_p f_q B_pq, where A and B are [D x D] sums of c.*t and
 % c over the entries of each channel pair. Greedy coordinate ascent (flip
 % the single channel that most increases the correlation, until none does)
 % is run from: all +1; the signs of the two leading eigenvectors of A; and
-% nrandom random sign vectors (fixed seed, so the search is deterministic;
-% the random vectors differ from osl-dynamics', which uses numpy's
-% generator). The best local optimum is returned. f and -f give the same
-% correlation.
+% nrandom random sign vectors (fixed seed). The best local optimum is
+% returned. f and -f give the same correlation.
 %__________________________________________________________________________
 
 % Chetan Gohil

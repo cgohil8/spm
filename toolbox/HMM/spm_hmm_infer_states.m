@@ -40,13 +40,12 @@ H     = 0;
 keep  = nargout > 2;
 gamma = cell(R.nseg,1);
 if nworkers > 0 && R.nseg > 1
-    % Fixed groups of consecutive segments, summed in order afterwards: the
-    % result does not depend on the scheduling or the number of workers
+    % fixed groups of consecutive segments, summed in order afterwards
     G  = min(R.nseg,64);
     gs = round(linspace(0,R.nseg,G+1));
     sg = cell(G,1); hg = zeros(G,1); gg = cell(G,1);
     parfor (j = 1:G, nworkers)
-        s = empty_sufficient_stats(K,D); h = 0; g = cell(gs(j+1)-gs(j),1); %#ok<PFBNS> (gs is small)
+        s = empty_sufficient_stats(K,D); h = 0; g = cell(gs(j+1)-gs(j),1); %#ok<PFBNS>
         for i = gs(j)+1:gs(j+1)
             [s,hi,g{i-gs(j)}] = segment_e_step(R,i,q,prior,keep,s);
             h = h + hi;

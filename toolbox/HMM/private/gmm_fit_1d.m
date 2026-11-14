@@ -4,14 +4,14 @@ function M = gmm_fit_1d(x,S)
 %
 % x   - [n x 1] data
 % S   - .ninit (10), .maxiter (5000), .tol (1e-3), .reg (1e-6), .seed (0)
-%       (sklearn's defaults; spm_hmm_gmm_threshold fits to convergence)
+%       (sklearn's defaults)
 %
 % M   - .w, .mu, .var [1 x 2] (unordered), .lower_bound
 %
-% sklearn's defaults: k-means (k-means++ seeding) initialisation of the
-% responsibilities, EM until the change in the mean log-likelihood is below
-% tol, variances regularised by reg, best of ninit starts. The starts use a
-% local random stream (sklearn: random_state=None in osl-dynamics).
+% k-means (k-means++ seeding) initialisation of the responsibilities, EM
+% until the change in the mean log-likelihood is below tol, variances
+% regularised by reg, best of ninit starts. The starts use a local random
+% stream seeded with .seed.
 %__________________________________________________________________________
 
 % Chetan Gohil

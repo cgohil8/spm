@@ -1,7 +1,6 @@
 function st = accumulate_obs_stats(st,y,g,miss,prior)
 % Add observation sufficient statistics of one segment
-% Statistics are taken about prior.m0 (zero for zero-mean models), which
-% keeps the natural-parameter updates well conditioned.
+% Statistics are taken about prior.m0 (zero for zero-mean models).
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -20,12 +19,11 @@ st.S1 = st.S1 + y'*w;
 st.T  = st.T + sum(~miss);
 K = size(w,2);
 if size(y,2) < 32
-    % small D: a general product is faster
     for k = 1:K
         st.S2(:,:,k) = st.S2(:,:,k) + (y.*w(:,k))'*y;
     end
 else
-    % S2 as x'*x with x = y.*sqrt(w), a symmetric product, in blocks of rows
+    % S2 as x'*x with x = y.*sqrt(w), in blocks of rows
     block = 8192;
     for lo = 1:block:size(y,1)
         hi = min(lo+block-1,size(y,1));

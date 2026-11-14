@@ -28,10 +28,9 @@ function prior = spm_hmm_set_priors(Y,S)
 % Any of alpha0, beta0, m0, kappa0, nu0, Sigma0 or W0 can be given in
 % S.prior to override the default. If W0 is given, Sigma0 is ignored.
 % The per-channel scale of the data (standard deviation, or root mean
-% square for zero-mean models) must lie between 1e-100 and 1e100, so that
-% the sums of squares cannot overflow or underflow.
+% square for zero-mean models) must lie between 1e-100 and 1e100.
 %
-% Rationale for the defaults: HMM_maths.md, section 10.
+% See HMM_maths.md, section 10.
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -46,8 +45,7 @@ if isfield(S,'prior') && ~isempty(S.prior), P = S.prior; else, P = struct(); end
 
 %-Pooled first and second moments of the observed samples
 %--------------------------------------------------------------------------
-% accumulated about the first observed sample c, which avoids cancellation
-% in s2/n - mu.^2 for data with a large offset
+% accumulated about the first observed sample c
 n = 0; s1 = zeros(1,D); s2 = zeros(1,D); s0 = zeros(1,D); c = []; amax = zeros(1,D);
 for i = 1:R.nseg
     for lo = 1:1e5:R.T(i)

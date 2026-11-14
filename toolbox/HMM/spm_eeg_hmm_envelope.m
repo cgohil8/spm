@@ -20,14 +20,12 @@ function Dout = spm_eeg_hmm_envelope(S)
 %   1. zero-phase Butterworth band-pass filter (two-pass, order S.order)
 %   2. amplitude envelope |hilbert(x)|
 %   3. centred moving average over S.window samples
-% This follows osl-dynamics (Data.filter, .amplitude_envelope and
-% .moving_average): the filter and envelope run through bad samples, and
-% only samples where the full moving-average window fits are kept; the
-% (S.window-1)/2 samples at each end of a trial are set to NaN (osl-
-% dynamics trims them), which spm_eeg_hmm treats as missing. Artefact
-% events and bad trials are copied, so spm_eeg_hmm also treats the
-% original bad samples as missing. Standardisation is left to
-% spm_eeg_hmm. Fit the HMM with learned means (the default without
+% As osl-dynamics Data.filter, .amplitude_envelope and .moving_average.
+% The filter and envelope run through bad samples. The (S.window-1)/2
+% samples at each end of a trial are set to NaN, which spm_eeg_hmm treats
+% as missing. Artefact events and bad trials are copied, so spm_eeg_hmm
+% also treats the original bad samples as missing. The data are not
+% standardised. Fit the HMM with learned means (the default without
 % time-delay embedding).
 %__________________________________________________________________________
 
@@ -98,7 +96,7 @@ Dout = units(Dout,1:nc,D.units(chanind));
 
 %-Envelopes, in blocks of channels
 %--------------------------------------------------------------------------
-blk = max(1,floor(2^25/ns));                    % about 256 MB of doubles
+blk = max(1,floor(2^25/ns));                    % 2^25 doubles per block
 h   = (w-1)/2;
 for t = 1:D.ntrials
     for c0 = 1:blk:nc

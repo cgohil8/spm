@@ -21,11 +21,10 @@ function [F,vals] = spm_hmm_plot_power_map(values,atlas,S)
 % F               - figure handles, one per map
 % vals            - [n_vertices x numel(maps)] values shown at the vertices
 %
-% Four views per map (left and right hemisphere, lateral and medial) with a
-% symmetric cold-hot colour scale, as osl-dynamics' plot_brain_surface
-% (power.save with subtract_mean for state maps relative to their mean).
+% As osl-dynamics' plot_brain_surface: four views per map (left and right
+% hemisphere, lateral and medial) on a symmetric cold-hot colour scale.
 % Each vertex takes the value of the nearest atlas voxel with a non-zero
-% weight, computed as in spm_hmm_parcel_maps.
+% weight.
 %__________________________________________________________________________
 
 % Chetan Gohil
