@@ -1,6 +1,6 @@
-function [Dout,M] = spm_eeg_hmm_orthogonalise(S)
+function [Dout,M] = spm_osld_orthogonalise(S)
 % Symmetric orthogonalisation of parcel time courses (leakage correction)
-% FORMAT [Dout,M] = spm_eeg_hmm_orthogonalise(S)
+% FORMAT [Dout,M] = spm_osld_orthogonalise(S)
 %
 % S            - input structure:
 %   .D           meeg object or file name, or a cell array of these
@@ -20,7 +20,7 @@ function [Dout,M] = spm_eeg_hmm_orthogonalise(S)
 % M is computed from the good samples of the good trials, concatenated,
 % and applied to every sample. Each channel keeps its norm over the good
 % samples and the channels have zero inner products. The data are not
-% demeaned first (spm_eeg_hmm_parcellate output is demeaned).
+% demeaned first: give demeaned data (e.g. DAiSS parcel time courses).
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -36,7 +36,7 @@ if iscell(S.D)
     Dout = cell(size(S.D)); M = cell(size(S.D));
     for f = 1:numel(S.D)
         Sf = S; Sf.D = S.D{f};
-        [Dout{f},M{f}] = spm_eeg_hmm_orthogonalise(Sf);
+        [Dout{f},M{f}] = spm_osld_orthogonalise(Sf);
     end
     return
 end
@@ -44,7 +44,7 @@ D = S.D;
 if ~isa(D,'meeg'), D = spm_eeg_load(D); end
 [X,info] = meeg_read(D,S);
 ch = info.chanind{1}(:)';
-if numel(ch) < 2, error('spm_hmm:invalidInput','At least two channels are needed.'); end
+if numel(ch) < 2, error('spm_osld:invalidInput','At least two channels are needed.'); end
 
 %-Weights from the good samples (osl-dynamics)
 %--------------------------------------------------------------------------

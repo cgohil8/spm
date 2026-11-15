@@ -1,11 +1,11 @@
-name: HMM toolbox (osl-dynamics)
+name: OSLDynamics toolbox
 on:
   push:
     branches: [osl-dynamics]
     paths:
-      - 'toolbox/HMM/**'
-      - 'tests/test_spm_hmm.m'
-      - '.github/workflows/hmm_osl_dynamics.yml'
+      - 'toolbox/OSLDynamics/**'
+      - 'tests/test_spm_osld.m'
+      - '.github/workflows/osl_dynamics.yml'
   workflow_dispatch:
 jobs:
   test:
@@ -15,8 +15,8 @@ jobs:
       matrix:
         include:
           - {os: windows-latest, version: latest}
-          - {os: windows-latest, version: R2023b}
           - {os: ubuntu-latest, version: latest}
+          - {os: ubuntu-latest, version: R2020b}
           - {os: macos-15, version: latest}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
@@ -36,9 +36,9 @@ jobs:
       - name: Install osl-dynamics (default location)
         uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3.0
         with:
-          command: addpath(pwd); addpath(fullfile(pwd,'toolbox','HMM')); info = spm_osld_install(); disp(info); spm_osld_python
+          command: addpath(pwd); addpath(fullfile(pwd,'toolbox','OSLDynamics')); info = spm_osld_install(); disp(info); spm_osld_python
 
-      - name: Run the HMM toolbox tests
+      - name: Run the OSLDynamics toolbox tests
         uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3.0
         with:
-          command: addpath(pwd); r = runtests('tests/test_spm_hmm.m'); disp(table(r)); assert(~isempty(r) && all([r.Passed]), 'Some tests did not pass.');
+          command: addpath(pwd); r = runtests('tests/test_spm_osld.m'); disp(table(r)); assert(~isempty(r) && all([r.Passed]), 'Some tests did not pass.');

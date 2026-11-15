@@ -1,6 +1,6 @@
-function [Dout,flips,info] = spm_eeg_hmm_sign_flip(S)
+function [Dout,flips,info] = spm_osld_sign_flip(S)
 % Align the signs of channels (e.g. parcels) across M/EEG datasets
-% FORMAT [Dout,flips,info] = spm_eeg_hmm_sign_flip(S)
+% FORMAT [Dout,flips,info] = spm_osld_sign_flip(S)
 %
 % S             - input structure:
 %   .D            cell array of meeg objects or file names, one per session

@@ -1,5 +1,5 @@
-classdef test_spm_hmm < matlab.unittest.TestCase
-% Unit tests for the HMM toolbox (toolbox/HMM), which runs osl-dynamics
+classdef test_spm_osld < matlab.unittest.TestCase
+% Unit tests for the OSLDynamics toolbox (toolbox/OSLDynamics)
 %
 % The tests are skipped when no Python with osl-dynamics is found (see
 % spm_osld_install and spm_osld_python).
@@ -19,7 +19,7 @@ function add_toolbox_to_path(testCase)
     if ~exist('cfg_getfile','file')            % used by spm_eeg_load
         addpath(fullfile(spm('Dir'),'matlabbatch'));
     end
-    p = fullfile(spm('Dir'),'toolbox','HMM');
+    p = fullfile(spm('Dir'),'toolbox','OSLDynamics');
     addpath(p);
     testCase.addTeardown(@rmpath,p);
     testCase.assumeNotEmpty(spm_osld_python(),'No Python with osl-dynamics.');
@@ -35,31 +35,12 @@ function test_python(testCase)
     testCase.verifyNotEmpty(info.source);
     out = evalc('spm_osld_python');
     testCase.verifySubstring(out,'osl-dynamics');
-    % MATLAB's Python interface runs the environment (or its base Python)
-    testCase.verifyEmpty(strfind(out,'could not run'));
-    pe = pyenv;
-    testCase.verifyEqual(char(pe.Status),'Loaded');
-    testCase.verifyEqual(char(pe.ExecutionMode),'OutOfProcess');
-end
-
-function test_subprocess(testCase)
-    % the same result through MATLAB's Python interface and a separate process
-    rs = RandStream('mt19937ar','Seed',1);
-    spec.f = (1:20)';
-    spec.psd = rand(rs,2,3,4,20);
-    P1 = spm_hmm_power_maps(spec,struct('freq',[5 10]));
-    old = getenv('SPM_OSLD_MODE');
-    testCase.addTeardown(@setenv,'SPM_OSLD_MODE',old);
-    setenv('SPM_OSLD_MODE','subprocess');
-    P2 = spm_hmm_power_maps(spec,struct('freq',[5 10]));
-    testCase.verifyEqual(P2,P1,'AbsTol',1e-12);
-    testCase.verifyEqual(squeeze(P1(1,1,2,:)),squeeze(mean(spec.psd(1,2,:,5:10),4)),'AbsTol',1e-12);
 end
 
 function test_fit_tde(testCase)
     [files,s] = make_meeg_datasets(testCase,'zeromean');
     S = struct('D',{files},'K',2,'tde',struct('lags',-2:2,'npca',6),'seed',1,'hmm',testCase.fast);
-    [HMM,Dout] = spm_eeg_hmm(S);
+    [HMM,Dout] = spm_osld_hmm(S);
     testCase.verifyEqual(HMM.K,2);
     testCase.verifyEqual(size(HMM.Ep.Sigma),[6 6 2]);
     testCase.verifyEqual(HMM.Ep.mu,zeros(6,2));
@@ -84,13 +65,13 @@ end
 function test_fit_means_and_pca(testCase)
     [files,s] = make_meeg_datasets(testCase,'means');
     S = struct('D',{files},'K',2,'seed',2,'hmm',testCase.fast);
-    HMM = spm_eeg_hmm(S);
+    HMM = spm_osld_hmm(S);
     testCase.verifyEqual(size(HMM.Ep.mu),[4 2]);
     testCase.verifyGreaterThan(state_accuracy(HMM.path,cellfun(@(x,i) x(i),s(:), ...
         HMM.meeg.index,'UniformOutput',false),HMM.missing),0.9);
     testCase.verifyEqual(cellfun(@nnz,HMM.missing),[0; 0]);
     S.pca = 3; S.write = false;
-    [HMM,Dout] = spm_eeg_hmm(S);
+    [HMM,Dout] = spm_osld_hmm(S);
     testCase.verifyEqual(size(HMM.pca.W),[4 3]);
     testCase.verifyEqual(size(HMM.Ep.Sigma),[3 3 2]);
     testCase.verifyEmpty(Dout);
@@ -98,65 +79,16 @@ end
 
 function test_input_validation(testCase)
     files = make_meeg_datasets(testCase,'zeromean');
-    testCase.verifyError(@() spm_eeg_hmm(struct('D',{files},'K',2,'tde',struct('lags',0:4))), ...
-        'spm_hmm:invalidInput');
-    testCase.verifyError(@() spm_eeg_hmm(struct('D',{files})),'spm_hmm:invalidInput');
-    testCase.verifyError(@() spm_eeg_hmm(struct('D',{files},'K',2,'channels',{{'X1'}})), ...
-        'spm_hmm:invalidInput');
-end
-
-function test_spectra_and_networks(testCase)
-    files = make_meeg_datasets(testCase,'zeromean');
-    S = struct('D',{files},'K',2,'tde',struct('lags',-2:2,'npca',6),'seed',1,'hmm',testCase.fast);
-    [HMM,Dout] = spm_eeg_hmm(S);
-    Ss = struct('D',{files},'HMM',HMM,'states',{cellfun(@fullfile,Dout,'UniformOutput',false)}, ...
-        'freq',[1 40],'window',100);
-    spec = spm_eeg_hmm_spectra(Ss);
-    F = numel(spec.f);
-    testCase.verifyEqual(size(spec.psd),[2 2 4 F]);
-    testCase.verifyEqual(size(spec.coh),[2 2 4 4 F]);
-    testCase.verifyEqual(spec.chanlabels,{'P1','P2','P3','P4'});
-    testCase.verifyGreaterThanOrEqual(min(spec.f),1);
-    testCase.verifyLessThanOrEqual(max(spec.f),40);
-    Ss.states = 'viterbi';
-    specv = spm_eeg_hmm_spectra(Ss);
-    testCase.verifyEqual(size(specv.psd),size(spec.psd));
-
-    comp = spm_hmm_spectral_components(spec,2);
-    testCase.verifyEqual(size(comp),[2 F]);
-    testCase.verifyGreaterThanOrEqual(min(comp(:)),0);
-    P = spm_hmm_power_maps(spec,struct('components',comp));
-    testCase.verifyEqual(size(P),[2 2 2 4]);
-    Pb = spm_hmm_power_maps(spec,struct('freq',[8 12]));
-    testCase.verifyEqual(size(Pb),[2 1 2 4]);
-    k = spec.f >= 8 & spec.f <= 12;
-    testCase.verifyEqual(squeeze(Pb(1,1,2,:)),squeeze(mean(spec.psd(1,2,:,k),4)),'RelTol',1e-6);
-    C = spm_hmm_coherence_networks(spec,struct('components',comp));
-    testCase.verifyEqual(size(C),[2 2 2 4 4]);
-
-    % thresholds for every input shape
-    Cm = reshape(mean(C,1),[2 2 4 4]);
-    [Ct,edges] = spm_hmm_threshold_network(Cm,struct('percentile',50));
-    testCase.verifyEqual(size(edges),[2 2 4 4]);
-    testCase.verifyEqual(Ct(~edges),zeros(nnz(~edges),1));
-    testCase.verifyEqual(Ct(edges),Cm(edges));
-    testCase.verifyEqual(edges,permute(edges,[1 2 4 3]));
-    [~,e3] = spm_hmm_threshold_network(squeeze(Cm(1,:,:,:)),struct('percentile',50));
-    testCase.verifyEqual(e3,squeeze(edges(1,:,:,:)));
-    [~,e2] = spm_hmm_threshold_network(squeeze(Cm(1,1,:,:)),struct('percentile',50));
-    testCase.verifyEqual(e2,squeeze(edges(1,1,:,:)));
-    [~,e5] = spm_hmm_threshold_network(C,struct('percentile',50,'subtractmean',true));
-    testCase.verifyEqual(size(e5),size(C));
-
-    % plots
-    figs = {spm_hmm_plot_time_course(HMM,struct('segments',1:2)), ...
-        spm_hmm_plot_summary_stats(HMM.stats),spm_hmm_plot_spectra(spec)};
-    for i = 1:numel(figs), testCase.verifyClass(figs{i},'matlab.ui.Figure'); close(figs{i}); end
+    testCase.verifyError(@() spm_osld_hmm(struct('D',{files},'K',2,'tde',struct('lags',0:4))), ...
+        'spm_osld:invalidInput');
+    testCase.verifyError(@() spm_osld_hmm(struct('D',{files})),'spm_osld:invalidInput');
+    testCase.verifyError(@() spm_osld_hmm(struct('D',{files},'K',2,'channels',{{'X1'}})), ...
+        'spm_osld:invalidInput');
 end
 
 function test_sign_flip(testCase)
     [files,truth] = sign_flip_datasets(testCase);
-    [Dout,flips,info] = spm_eeg_hmm_sign_flip(struct('D',{files},'nembed',3));
+    [Dout,flips,info] = spm_osld_sign_flip(struct('D',{files},'nembed',3));
     testCase.verifyEqual(info.chanlabels,{'P1','P2','P3','P4'});
     rel = flips.*truth;              % up to one sign per channel and per session
     testCase.verifyEqual(abs(rel*rel(1,:)'),4*ones(3,1));
@@ -165,21 +97,9 @@ function test_sign_flip(testCase)
     testCase.verifyEqual(Dout{2}(5,:,1),D(5,:,1));
 end
 
-function test_envelope(testCase)
-    files = make_meeg_datasets(testCase,'zeromean');
-    Do = spm_eeg_hmm_envelope(struct('D',files{2},'window',1));
-    D  = spm_eeg_load(files{2});
-    x  = double(D(1:4,:,1))';
-    testCase.verifyEqual(Do.chanlabels,{'P1','P2','P3','P4'});
-    testCase.verifyEqual(double(Do(:,:,1))',abs(hilbert(x)),'RelTol',1e-4,'AbsTol',1e-4);
-    Do = spm_eeg_hmm_envelope(struct('D',{files(2)},'freq',[8 12],'window',11));
-    y = Do{1}(:,:,1);
-    testCase.verifyEqual(find(any(isnan(y),1)),[1:5 2496:2500]);
-end
-
 function test_orthogonalise(testCase)
     files = make_meeg_datasets(testCase,'zeromean');
-    [Do,M] = spm_eeg_hmm_orthogonalise(struct('D',files{1},'channels',{{'P1','P2','P3','P4'}}));
+    [Do,M] = spm_osld_orthogonalise(struct('D',files{1},'channels',{{'P1','P2','P3','P4'}}));
     D = spm_eeg_load(files{1});
     good = setdiff(1:3000,401:451);
     y = double(Do(1:4,good,1)); x = double(D(1:4,good,1));

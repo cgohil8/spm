@@ -1,6 +1,6 @@
-function [HMM,Dout] = spm_eeg_hmm(S)
+function [HMM,Dout] = spm_osld_hmm(S)
 % Fit a hidden Markov model to M/EEG data with osl-dynamics
-% FORMAT [HMM,Dout] = spm_eeg_hmm(S)
+% FORMAT [HMM,Dout] = spm_osld_hmm(S)
 %
 % S             - input structure:
 %   .D            meeg object or file name, or a cell array of these
@@ -64,8 +64,8 @@ function [HMM,Dout] = spm_eeg_hmm(S)
 
 %-Options
 %--------------------------------------------------------------------------
-if ~isfield(S,'D') || isempty(S.D), error('spm_hmm:invalidInput','S.D is required.'); end
-if ~isfield(S,'K') || isempty(S.K), error('spm_hmm:invalidInput','S.K is required.'); end
+if ~isfield(S,'D') || isempty(S.D), error('spm_osld:invalidInput','S.D is required.'); end
+if ~isfield(S,'K') || isempty(S.K), error('spm_osld:invalidInput','S.K is required.'); end
 def = struct('channels',{{}},'chantype',{{'MEEG','LFP','SRC'}},'conditions',{{}}, ...
     'standardise',true,'pca',[],'tde',struct(),'zeromean',[],'hmm',struct(), ...
     'seed',[],'modeldir','','write',true,'prefix','hmm_','python','');
@@ -77,7 +77,7 @@ tde = isfield(S.tde,'lags') && ~isempty(S.tde.lags);
 if tde
     lags = S.tde.lags(:)';
     if ~isequal(lags,-max(lags):max(lags)) || max(lags) < 1
-        error('spm_hmm:invalidInput','S.tde.lags must be -L:L (osl-dynamics embeds symmetrically).');
+        error('spm_osld:invalidInput','S.tde.lags must be -L:L (osl-dynamics embeds symmetrically).');
     end
     if ~isfield(S.tde,'npca'), S.tde.npca = []; end
 end
@@ -86,7 +86,7 @@ if isempty(S.zeromean), S.zeromean = tde; end
 %-Data
 %--------------------------------------------------------------------------
 [X,info] = meeg_read(S.D,S);
-fprintf('spm_eeg_hmm: %d dataset(s), %d channels, %d samples\n', ...
+fprintf('spm_osld_hmm: %d dataset(s), %d channels, %d samples\n', ...
     numel(X),numel(info.chanlabels),sum(cellfun(@(x) size(x,1),X)));
 
 %-Fit with osl-dynamics

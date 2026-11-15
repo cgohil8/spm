@@ -38,7 +38,7 @@ end
 fs = D{1}.fsample;
 for f = 2:nf
     if abs(D{f}.fsample - fs) > 1e-9*fs
-        error('spm_hmm:invalidInput','All datasets must have the same sampling frequency.');
+        error('spm_osld:invalidInput','All datasets must have the same sampling frequency.');
     end
 end
 
@@ -49,7 +49,7 @@ if isempty(S.channels)
 else
     labels = cellstr(S.channels);
 end
-if isempty(labels), error('spm_hmm:invalidInput','No channels selected.'); end
+if isempty(labels), error('spm_osld:invalidInput','No channels selected.'); end
 labels = labels(:)';
 
 info.files      = cellfun(@fullfile,D(:),'UniformOutput',false);
@@ -64,17 +64,17 @@ X = cell(nf,1);
 for f = 1:nf
     [ok,ind] = ismember(labels,D{f}.chanlabels);
     if ~all(ok)
-        error('spm_hmm:invalidInput','Dataset %d lacks channel(s): %s.',f,strjoin(labels(~ok),', '));
+        error('spm_osld:invalidInput','Dataset %d lacks channel(s): %s.',f,strjoin(labels(~ok),', '));
     end
     if any(ismember(ind,D{f}.badchannels))
-        error('spm_hmm:invalidInput','A selected channel is marked bad in dataset %d.',f);
+        error('spm_osld:invalidInput','A selected channel is marked bad in dataset %d.',f);
     end
     if isempty(S.conditions)
         trials = setdiff(1:D{f}.ntrials,D{f}.badtrials);
     else
         trials = D{f}.indtrial(S.conditions,'GOOD');
     end
-    if isempty(trials), error('spm_hmm:invalidInput','Dataset %d has no good trials.',f); end
+    if isempty(trials), error('spm_osld:invalidInput','Dataset %d has no good trials.',f); end
     ns = D{f}.nsamples;
     x = cell(numel(trials),1);
     idx = cell(numel(trials),1);

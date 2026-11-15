@@ -1,12 +1,11 @@
 function info = spm_osld_install(S)
-% Install osl-dynamics in a Python environment for the HMM toolbox
+% Install osl-dynamics in a Python environment for the OSLDynamics toolbox
 % FORMAT info = spm_osld_install(S)
 % FORMAT spm_osld_install('uninstall')
 %
 % S             - options:
 %   .dir          installation folder (a few GB)    [~/.spm/osl-dynamics]
-%   .python       Python version, e.g. '3.12'   [the newest that MATLAB's
-%                 Python interface supports, at most 3.12]
+%   .python       Python version                                    ['3.12']
 %   .gpu          TensorFlow with CUDA (Linux only)                  [false]
 %   .force        reinstall even if osl-dynamics is installed        [false]
 %   .confirm      ask before uninstalling                             [true]
@@ -17,19 +16,27 @@ function info = spm_osld_install(S)
 % osl-dynamics and TensorFlow from PyPI into a new environment in S.dir:
 % osl-dynamics OSLD_VERSION, with every other package at its latest version
 % released before EXCLUDE_NEWER, so that every installation gets the same
-% packages. The environment is recorded in ~/.spm/spm_osld.json, where the
+% packages. The dependencies of osl-dynamics that the toolbox does not use
+% (EXCLUDES: M/EEG preprocessing, 3D plotting, Qt and notebook packages)
+% are left out, which halves the size of the environment. The environment is recorded in ~/.spm/spm_osld.json, where the
 % toolbox finds it (see spm_osld_python). Needs an internet connection;
-% nothing outside S.dir and ~/.spm is changed, except MATLAB's Python
-% (pyenv), which is set to the new environment if MATLAB can use it.
+% nothing outside S.dir and ~/.spm is changed.
 %__________________________________________________________________________
 
 % Chetan Gohil
 % Copyright (C) 2026 NDCN, University of Oxford
 
 
-OSLD_VERSION  = '3.8.1';
+OSLD_VERSION  = '3.8.3';
 EXCLUDE_NEWER = '2026-11-01';
 UV_VERSION    = '0.13.6';
+% Dependencies of osl-dynamics that are not installed (uv --excludes). Do
+% not add mne, nilearn, seaborn or pandas: data loading and the analysis
+% modules import them. (osl-dynamics 3.8.2 needs fslpy, scikit-image and
+% numba for osl_dynamics.meeg.parcellation; 3.8.3 does not.)
+EXCLUDES      = {'fslpy','h5io','ipyevents','ipywidgets','mne-icalabel', ...
+    'nest-asyncio2','numba','onnxruntime','osfclient','pyside6','pyvista', ...
+    'pyvistaqt','scikit-image','trame','trame-vtk','trame-vuetify','vtk'};
 UV_ASSETS     = { ...                % MATLAB arch, uv archive, SHA-256
     'maca64',  'uv-aarch64-apple-darwin.tar.gz',    '60fbd5c8a1ed681845eea28d9d622fcde03c51e91a43465b64a1e17db1ed3472'
     'maci64',  'uv-x86_64-apple-darwin.tar.gz',     '63ba17fdda55ad1a230d4b37fc6017ffa10c23688c83818bd3bfdf914c652a02'
@@ -77,9 +84,9 @@ end
 if S.gpu && ~strcmp(arch,'glnxa64')
     error('spm_osld:install','TensorFlow with CUDA (S.gpu) is only available on Linux.');
 end
-if isempty(S.python), S.python = python_version(); end
+if isempty(S.python), S.python = '3.12'; end
 if ~exist(p.dir,'dir'), mkdir(p.dir); end
-check_space(p.dir,6e9);
+check_space(p.dir,4e9);
 if ispc, check_path_length(p.env); end
 
 %-uv
@@ -112,10 +119,16 @@ if exist(p.env,'dir'), rmdir(p.env,'s'); end
 fprintf('Installing Python %s in %s...\n',S.python,p.env);
 run(p.uv,sprintf('venv --python %s --managed-python "%s"',S.python,p.env),env);
 if S.gpu, extra = 'tf-cuda'; else, extra = 'tf'; end
-fprintf('Installing osl-dynamics %s and its dependencies (about 1 GB to download)...\n',OSLD_VERSION);
+fprintf('Installing osl-dynamics %s and its dependencies...\n',OSLD_VERSION);
+excludes = [tempname '.txt'];
+fid = fopen(excludes,'w');
+fprintf(fid,'%s\n',EXCLUDES{:});
+fclose(fid);
+cleanup = onCleanup(@() delete(excludes));
 run(p.uv,sprintf(['pip install --python "%s" --exclude-newer %s ' ...
-    '--exclude-newer-package osl-dynamics=%s "osl-dynamics[%s]==%s"'], ...
-    p.python,EXCLUDE_NEWER,char(datetime('now') + 1,'yyyy-MM-dd'),extra,OSLD_VERSION),env);
+    '--exclude-newer-package osl-dynamics=%s --excludes "%s" "osl-dynamics[%s]==%s"'], ...
+    p.python,EXCLUDE_NEWER,char(datetime('now') + 1,'yyyy-MM-dd'),excludes,extra,OSLD_VERSION),env);
+clear cleanup
 if exist(p.cache,'dir'), rmdir(p.cache,'s'); end
 
 %-Check and record
@@ -135,20 +148,9 @@ info = struct('python',p.python,'dir',p.dir,'osl_dynamics',v.osl_dynamics, ...
 
 function v = try_versions(python)
 try
-    v = osld_run('versions',struct(),struct('python',python,'mode','subprocess'));
+    v = osld_run('versions',struct(),struct('python',python));
 catch
     v = [];
-end
-
-
-function v = python_version()
-% Newest Python (<= 3.12) supported by this MATLAB's Python interface
-r = version('-release');
-t = str2double(r(1:4)) + 0.5*(r(5) == 'b');
-if t >= 2024.5,     v = '3.12';
-elseif t >= 2023.5, v = '3.11';
-elseif t >= 2022.5, v = '3.10';
-else,               v = '3.12';  % osl-dynamics needs >= 3.10: separate process
 end
 
 
@@ -227,11 +229,6 @@ else
     if confirm
         a = input(sprintf('Delete the osl-dynamics installation in %s? [y/N] ',p.dir),'s');
         if ~strcmpi(strtrim(a),'y'), return; end
-    end
-    pe = pyenv;
-    if strcmp(char(pe.Status),'Loaded') && startsWith(char(pe.Executable),p.dir) ...
-            && strcmp(char(pe.ExecutionMode),'OutOfProcess')
-        terminate(pyenv);
     end
     for d = {p.env,p.python_install,p.bin,p.cache}         % only what was installed
         if exist(d{1},'dir'), rmdir(d{1},'s'); end
