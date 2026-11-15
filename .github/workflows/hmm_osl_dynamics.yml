@@ -1,7 +1,7 @@
 name: HMM toolbox (osl-dynamics)
 on:
   push:
-    branches: [osld-hmm]
+    branches: [osl-dynamics]
     paths:
       - 'toolbox/HMM/**'
       - 'tests/test_spm_hmm.m'
