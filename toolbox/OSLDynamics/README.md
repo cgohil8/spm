@@ -46,6 +46,11 @@ A typical source-space pipeline: parcel time courses of each session
 time-delay embedded HMM of several sessions) → `spm_osld_hmm`. See
 `examples/osld_hmm_tde_pca.m`.
 
+The three steps are also in the batch editor (SPM > Tools > OSL-Dynamics:
+Leakage correction, Sign flipping, Hidden Markov model) and can be chained
+after the DAiSS modules through dependencies. The HMM module saves the
+model as `<name>.mat` (variable `HMM`) in the output directory.
+
 ## Data
 
 Each dataset is one session of a group-level model. The good samples of its

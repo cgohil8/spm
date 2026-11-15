@@ -109,6 +109,36 @@ function test_orthogonalise(testCase)
     testCase.verifyEqual(Do(5,:,1),D(5,:,1),'AbsTol',1e-5);
 end
 
+function test_batch(testCase)
+    % orthogonalise -> sign flip -> HMM as one batch, chained by dependencies
+    files = sign_flip_datasets(testCase);
+    outdir = fileparts(files{1});
+    spm_jobman('initcfg');
+    mod = @(i) substruct('.','val','{}',{i},'.','val','{}',{1},'.','val','{}',{1},'.','val','{}',{1});
+    mb = {};
+    mb{1}.spm.tools.osld.orthogonalise.D = files(:);
+    mb{2}.spm.tools.osld.sign_flip.D(1) = cfg_dep('Orthogonalised datasets',mod(1),substruct('.','D'));
+    mb{2}.spm.tools.osld.sign_flip.nembed = 5;
+    mb{3}.spm.tools.osld.hmm.D(1) = cfg_dep('Sign-flipped datasets',mod(2),substruct('.','D'));
+    mb{3}.spm.tools.osld.hmm.K = 2;
+    mb{3}.spm.tools.osld.hmm.embedding.tde = struct('lags',2,'npca',4);
+    mb{3}.spm.tools.osld.hmm.training = struct('n_epochs',2,'n_init',1,'n_init_epochs',1, ...
+        'sequence_length',100,'batch_size',16,'learning_rate',0.01);
+    mb{3}.spm.tools.osld.hmm.seed = 1;
+    mb{3}.spm.tools.osld.hmm.outdir = {outdir};
+    out = spm_jobman('run',mb);
+    testCase.verifyEqual(numel(out{2}.D),3);
+    testCase.verifyEqual(out{3}.HMM,{fullfile(outdir,'hmm.mat')});
+    HMM = getfield(load(out{3}.HMM{1}),'HMM');
+    testCase.verifyEqual(size(HMM.Ep.Sigma),[4 4 2]);
+    testCase.verifyEqual(HMM.tde.lags,-2:2);
+    testCase.verifyEqual(HMM.osld.config.n_epochs,2);
+    testCase.verifyEqual(numel(out{3}.D),3);
+    [~,name] = fileparts(out{3}.D{1});
+    testCase.verifyEqual(name,'hmm_sf_orth_sf1');
+    Ds = spm_eeg_load(out{3}.D{1});
+    testCase.verifyEqual(Ds.chanlabels,{'State1','State2'});
+end
 end
 end
 
