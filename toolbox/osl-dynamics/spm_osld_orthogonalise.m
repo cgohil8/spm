@@ -16,11 +16,11 @@ function [Dout,M] = spm_osld_orthogonalise(S)
 %                the orthogonalised data are Y*M, with Y [samples x P]
 %
 % As osl_dynamics.meeg.parcellation.symmetric_orthogonalization with
-% maintain_magnitudes=True (Colclough et al. 2015, NeuroImage 117:439):
-% M is computed from the good samples of the good trials, concatenated,
-% and applied to every sample. Each channel keeps its norm over the good
-% samples and the channels have zero inner products. The data are not
-% demeaned first: give demeaned data (e.g. DAiSS parcel time courses).
+% maintain_magnitudes=True: M is computed from the good samples of the good
+% trials, concatenated, and applied to every sample. Each channel keeps its
+% norm over the good samples and the channels have zero inner products.
+% The data are not demeaned first: give demeaned data (e.g. DAiSS parcel
+% time courses).
 %__________________________________________________________________________
 
 % Chetan Gohil

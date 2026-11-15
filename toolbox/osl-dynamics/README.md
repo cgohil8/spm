@@ -83,7 +83,5 @@ interval, switching rate).
 - Vidaurre D, et al. (2018) Spontaneous cortical activity transiently
   organises into frequency specific phase-coupling networks. *Nature
   Communications* 9:2987.
-- Colclough GL, et al. (2015) A symmetric multivariate leakage correction
-  for MEG connectomes. *NeuroImage* 117:439-448.
 - Gohil C, et al. (2024) osl-dynamics, a toolbox for modeling fast dynamic
   brain activity. *eLife* 12:RP91949.
