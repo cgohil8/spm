@@ -19,7 +19,7 @@ spm_osld_install(struct('dir','D:\osl-dynamics')) % or in another folder
 
 `spm_osld_install` downloads [uv](https://docs.astral.sh/uv), which
 installs Python and then osl-dynamics and TensorFlow from PyPI into a new
-environment (a few GB; macOS, Linux and Windows). The osl-dynamics version
+environment (about 2 GB; macOS, Linux and Windows). The osl-dynamics version
 is fixed, and every other package is at its latest version released before
 a fixed date, so every installation gets the same packages. The environment
 is recorded in `~/.spm/spm_osld.json`. To use an existing Python

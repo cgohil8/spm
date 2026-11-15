@@ -4,7 +4,7 @@ function info = spm_osld_install(S)
 % FORMAT spm_osld_install('uninstall')
 %
 % S             - options:
-%   .dir          installation folder (a few GB)    [~/.spm/osl-dynamics]
+%   .dir          installation folder (about 2 GB)  [~/.spm/osl-dynamics]
 %   .python       Python version                                    ['3.12']
 %   .gpu          TensorFlow with CUDA (Linux only)                  [false]
 %   .force        reinstall even if osl-dynamics is installed        [false]
@@ -86,7 +86,7 @@ if S.gpu && ~strcmp(arch,'glnxa64')
 end
 if isempty(S.python), S.python = '3.12'; end
 if ~exist(p.dir,'dir'), mkdir(p.dir); end
-check_space(p.dir,4e9);
+check_space(p.dir,3e9);                % about 2 GB at most while installing
 if ispc, check_path_length(p.env); end
 
 %-uv
