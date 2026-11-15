@@ -1,11 +1,12 @@
-# OSLDynamics toolbox
+# osl-dynamics toolbox
 
 Dynamic network models of M/EEG data in SPM, trained with
 [osl-dynamics](https://github.com/OHBA-analysis/osl-dynamics). The MATLAB
 functions read and write SPM M/EEG datasets and call osl-dynamics for the
-data preparation and the models. The toolbox starts from data that SPM has
-already processed, e.g. parcel time courses from a DAiSS beamformer.
-Currently the hidden Markov model (HMM) is available.
+data preparation, the models and the post-hoc analysis; the plots are drawn
+in MATLAB. Currently the hidden Markov model (HMM) is available. An example
+pipeline, from raw MEG recordings (preprocessing and DAiSS beamforming in
+SPM) to plots of the HMM states, is in `examples/`.
 
 ## Installation
 
@@ -37,16 +38,24 @@ is not used or changed.
 
 | Step | Function | osl-dynamics |
 |---|---|---|
+| Parcel time courses (DAiSS LCMV) | `spm_osld_parcellate` | |
 | Leakage correction | `spm_osld_orthogonalise` | `meeg.parcellation.symmetric_orthogonalization` |
 | Sign flipping | `spm_osld_sign_flip` | `Data.align_channel_signs` |
 | HMM | `spm_osld_hmm` | `Data.standardize`, `.pca`, `.tde_pca`; `models.hmm` |
+| State spectra | `spm_osld_spectra` | `analysis.spectral.multitaper_spectra` |
+| Spectral components | `spm_osld_spectral_components` | `analysis.spectral.decompose_spectra` |
+| Power maps | `spm_osld_power_maps` | `analysis.power.variance_from_spectra` |
+| Coherence networks | `spm_osld_coherence_networks` | `analysis.connectivity.mean_coherence_from_spectra` |
+| Network thresholds | `spm_osld_threshold_network` | `analysis.connectivity.threshold` |
+| Plots | `spm_osld_plot_*` | |
 
 A typical source-space pipeline: parcel time courses of each session
-(DAiSS) → `spm_osld_orthogonalise` → `spm_osld_sign_flip` (for a
-time-delay embedded HMM of several sessions) → `spm_osld_hmm`. See
-`examples/osld_hmm_tde_pca.m`.
+(DAiSS beamformer, `spm_osld_parcellate`) → `spm_osld_orthogonalise` →
+`spm_osld_sign_flip` (for a time-delay embedded HMM of several sessions) →
+`spm_osld_hmm` → spectra, power maps and networks → plots. See
+`examples/README.md`.
 
-The three steps are also in the batch editor (SPM > Tools > OSL-Dynamics:
+The three steps are also in the batch editor (SPM > Tools > osl-dynamics:
 Leakage correction, Sign flipping, Hidden Markov model) and can be chained
 after the DAiSS modules through dependencies. The HMM module saves the
 model as `<name>.mat` (variable `HMM`) in the output directory.

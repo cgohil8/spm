@@ -1,5 +1,5 @@
 classdef test_spm_osld < matlab.unittest.TestCase
-% Unit tests for the OSLDynamics toolbox (toolbox/OSLDynamics)
+% Unit tests for the osl-dynamics toolbox (toolbox/osl-dynamics)
 %
 % The tests are skipped when no Python with osl-dynamics is found (see
 % spm_osld_install and spm_osld_python).
@@ -19,7 +19,7 @@ function add_toolbox_to_path(testCase)
     if ~exist('cfg_getfile','file')            % used by spm_eeg_load
         addpath(fullfile(spm('Dir'),'matlabbatch'));
     end
-    p = fullfile(spm('Dir'),'toolbox','OSLDynamics');
+    p = fullfile(spm('Dir'),'toolbox','osl-dynamics');
     addpath(p);
     testCase.addTeardown(@rmpath,p);
     testCase.assumeNotEmpty(spm_osld_python(),'No Python with osl-dynamics.');
@@ -139,6 +139,77 @@ function test_batch(testCase)
     Ds = spm_eeg_load(out{3}.D{1});
     testCase.verifyEqual(Ds.chanlabels,{'State1','State2'});
 end
+function test_spectra_and_networks(testCase)
+    files = make_meeg_datasets(testCase,'zeromean');
+    S = struct('D',{files},'K',2,'tde',struct('lags',-2:2,'npca',6),'seed',1,'hmm',testCase.fast);
+    [HMM,Dout] = spm_osld_hmm(S);
+    Ss = struct('D',{files},'HMM',HMM,'states',{cellfun(@fullfile,Dout,'UniformOutput',false)}, ...
+        'freq',[1 40],'window',100);
+    spec = spm_osld_spectra(Ss);
+    F = numel(spec.f);
+    testCase.verifyEqual(size(spec.psd),[2 2 4 F]);
+    testCase.verifyEqual(size(spec.coh),[2 2 4 4 F]);
+    testCase.verifyEqual(spec.chanlabels,{'P1','P2','P3','P4'});
+    testCase.verifyGreaterThanOrEqual(min(spec.f),1);
+    testCase.verifyLessThanOrEqual(max(spec.f),40);
+    Ss.states = 'viterbi';
+    specv = spm_osld_spectra(Ss);
+    testCase.verifyEqual(size(specv.psd),size(spec.psd));
+
+    comp = spm_osld_spectral_components(spec,2);
+    testCase.verifyEqual(size(comp),[2 F]);
+    testCase.verifyGreaterThanOrEqual(min(comp(:)),0);
+    P = spm_osld_power_maps(spec,struct('components',comp));
+    testCase.verifyEqual(size(P),[2 2 2 4]);
+    Pb = spm_osld_power_maps(spec,struct('freq',[8 12]));
+    testCase.verifyEqual(size(Pb),[2 1 2 4]);
+    k = spec.f >= 8 & spec.f <= 12;
+    testCase.verifyEqual(squeeze(Pb(1,1,2,:)),squeeze(mean(spec.psd(1,2,:,k),4)),'RelTol',1e-6);
+    C = spm_osld_coherence_networks(spec,struct('components',comp));
+    testCase.verifyEqual(size(C),[2 2 2 4 4]);
+
+    % thresholds for every input shape
+    Cm = reshape(mean(C,1),[2 2 4 4]);
+    [Ct,edges] = spm_osld_threshold_network(Cm,struct('percentile',50));
+    testCase.verifyEqual(size(edges),[2 2 4 4]);
+    testCase.verifyEqual(Ct(~edges),zeros(nnz(~edges),1));
+    testCase.verifyEqual(Ct(edges),Cm(edges));
+    testCase.verifyEqual(edges,permute(edges,[1 2 4 3]));
+    [~,e3] = spm_osld_threshold_network(squeeze(Cm(1,:,:,:)),struct('percentile',50));
+    testCase.verifyEqual(e3,squeeze(edges(1,:,:,:)));
+    [~,e2] = spm_osld_threshold_network(squeeze(Cm(1,1,:,:)),struct('percentile',50));
+    testCase.verifyEqual(e2,squeeze(edges(1,1,:,:)));
+    [~,e5] = spm_osld_threshold_network(C,struct('percentile',50,'subtractmean',true));
+    testCase.verifyEqual(size(e5),size(C));
+
+    % plots
+    figs = {spm_osld_plot_time_course(HMM,struct('segments',1:2)), ...
+        spm_osld_plot_summary_stats(HMM.stats),spm_osld_plot_spectra(spec)};
+    for i = 1:numel(figs), testCase.verifyClass(figs{i},'matlab.ui.Figure'); close(figs{i}); end
+end
+function test_atlas_and_plots(testCase)
+    % parcel maps, centres and the surface and glass-brain plots with a
+    % 4-parcel atlas
+    atlas = make_atlas(testCase);
+    c = spm_osld_parcel_maps([],atlas);
+    testCase.verifyEqual(size(c),[4 3]);
+    testCase.verifyLessThan(c([1 3],1),0);
+    testCase.verifyGreaterThan(c([2 4],1),0);
+    out = fullfile(fileparts(atlas),'map.nii');
+    V = spm_osld_parcel_maps([1 -1; 2 -2; 3 -3; 4 -4],atlas,out);
+    testCase.verifyEqual(numel(V),2);
+    Y = spm_read_vols(spm_vol([out ',2']));
+    testCase.verifyEqual(sort(unique(Y(Y ~= 0)))',[-4 -3 -2 -1]);
+    [F,vals] = spm_osld_plot_power_map([1 2; 2 1; 3 0; 4 -1],atlas,struct('titles',{{'A','B'}}));
+    testCase.verifyEqual(numel(F),2);
+    testCase.verifyEqual(size(vals,2),2);
+    testCase.verifyTrue(any(vals(:,1) == 4));
+    close(F);
+    conn = zeros(4); conn(1,2) = 0.5; conn(3,4) = -0.3; conn = conn + conn';
+    F = spm_osld_plot_network(conn,atlas,struct('title','test'));
+    testCase.verifyClass(F,'matlab.ui.Figure');
+    close(F);
+end
 end
 end
 
@@ -212,6 +283,28 @@ for g = 1:3
     save(D);
     files{g} = fullfile(D);
 end
+end
+
+
+function file = make_atlas(testCase)
+% 3D label atlas on a 10 mm MNI grid: 4 parcels (left/right x anterior/
+% posterior) inside an ellipsoid
+dd = tempname; mkdir(dd);
+testCase.addTeardown(@rmdir,dd,'s');
+file = fullfile(dd,'atlas.nii');
+M = [10 0 0 -100; 0 10 0 -136; 0 0 10 -82; 0 0 0 1];
+dim = [19 23 19];
+[i,j,k] = ndgrid(1:dim(1),1:dim(2),1:dim(3));
+xyz = M*[i(:) j(:) k(:) ones(numel(i),1)]';
+x = xyz(1,:); y = xyz(2,:); z = xyz(3,:);
+inside = (x/70).^2 + ((y+20)/100).^2 + ((z-10)/80).^2 < 1;
+lab = zeros(dim);
+lab(inside & x < 0 & y > -20)  = 1;
+lab(inside & x > 0 & y > -20)  = 2;
+lab(inside & x < 0 & y <= -20) = 3;
+lab(inside & x > 0 & y <= -20) = 4;
+V = struct('fname',file,'dim',dim,'mat',M,'dt',[spm_type('uint8') 0],'pinfo',[1;0;0]);
+spm_write_vol(V,lab);
 end
 
 function s = sticky_chain(rs,T,K,L)

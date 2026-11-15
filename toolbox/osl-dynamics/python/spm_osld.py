@@ -1,4 +1,4 @@
-"""osl-dynamics tasks for SPM's OSLDynamics toolbox.
+"""osl-dynamics tasks for SPM's osl-dynamics toolbox.
 
 A job is a folder holding job.json, {"task": <name>, "args": {...}}, and
 the arrays the arguments refer to. An array is stored as a raw binary file
@@ -58,6 +58,7 @@ def versions(store_dir, check=False):
         # every module the toolbox uses (the installation leaves out some
         # dependencies of osl-dynamics: see EXCLUDES in spm_osld_install.m)
         import tensorflow  # noqa: F401
+        from osl_dynamics.analysis import connectivity, power, spectral  # noqa: F401
         from osl_dynamics.data import Data  # noqa: F401
         from osl_dynamics.inference import modes  # noqa: F401
         from osl_dynamics.meeg.parcellation import symmetric_orthogonalization  # noqa: F401
@@ -205,6 +206,107 @@ def sign_flip(
     return {"flips": np.array(flips)}
 
 
+def spectra(
+    store_dir,
+    data,
+    sampling_frequency,
+    alpha=None,
+    window_length=None,
+    step_size=None,
+    time_half_bandwidth=4,
+    n_tapers=7,
+    frequency_range=None,
+    standardize=True,
+    calc_coh=True,
+    calc_cpsd=False,
+    n_jobs=1,
+):
+    """State multitaper spectra (osl_dynamics.analysis.spectral.multitaper_spectra)."""
+    from osl_dynamics.analysis import spectral
+
+    data = _sessions(data)
+    if alpha is not None:
+        alpha = _sessions(alpha)
+    res = spectral.multitaper_spectra(
+        data=data,
+        sampling_frequency=sampling_frequency,
+        alpha=alpha,
+        window_length=None if window_length is None else int(window_length),
+        step_size=None if step_size is None else int(step_size),
+        time_half_bandwidth=time_half_bandwidth,
+        n_tapers=int(n_tapers),
+        frequency_range=None if frequency_range is None else list(np.ravel(frequency_range)),
+        standardize=bool(standardize),
+        calc_cpsd=bool(calc_cpsd),
+        calc_coh=bool(calc_coh),
+        keepdims=True,
+        n_jobs=int(n_jobs),
+    )
+    out = {"f": np.asarray(res[0]), ("cpsd" if calc_cpsd else "psd"): np.asarray(res[1])}
+    if calc_coh:
+        out["coh"] = np.asarray(res[2])
+    return out
+
+
+def spectral_components(store_dir, coh, n_components):
+    """Spectral components of coherence (spectral.decompose_spectra)."""
+    from osl_dynamics.analysis import spectral
+
+    comp = spectral.decompose_spectra(np.asarray(coh), int(n_components))
+    return {"components": np.reshape(comp, (int(n_components), -1))}
+
+
+def power_maps(store_dir, f, psd, components=None, frequency_range=None, method="mean"):
+    """Power of each session, component, state and channel (power.variance_from_spectra)."""
+    from osl_dynamics.analysis import power
+
+    G, K, D = psd.shape[:3]
+    C = 1 if components is None else np.atleast_2d(components).shape[0]
+    p = power.variance_from_spectra(
+        np.ravel(f),
+        psd,
+        components=None if components is None else np.atleast_2d(components),
+        frequency_range=None if frequency_range is None else list(np.ravel(frequency_range)),
+        method=method,
+    )
+    return {"power": np.reshape(p, (G, C, K, D))}
+
+
+def coherence_networks(store_dir, f, coh, components=None, frequency_range=None):
+    """Mean coherence of each session, component, state and channel pair."""
+    from osl_dynamics.analysis import connectivity
+
+    G, K, D = coh.shape[:3]
+    C = 1 if components is None else np.atleast_2d(components).shape[0]
+    c = connectivity.mean_coherence_from_spectra(
+        np.ravel(f),
+        coh,
+        components=None if components is None else np.atleast_2d(components),
+        frequency_range=None if frequency_range is None else list(np.ravel(frequency_range)),
+    )
+    return {"coh": np.reshape(c, (G, C, K, D, D))}
+
+
+def threshold(store_dir, conn, percentile, subtract_mean=False, mean_weights=None, absolute_value=False):
+    """Edges above a percentile of each [components x states] network (connectivity.threshold)."""
+    from osl_dynamics.analysis import connectivity
+
+    conn = np.asarray(conn)
+    percentile = np.asarray(percentile, dtype=float)
+    if percentile.size == 1:
+        percentile = float(percentile)
+    edges = connectivity.threshold(
+        conn,
+        percentile,
+        subtract_mean=bool(subtract_mean),
+        mean_weights=None if mean_weights is None else np.ravel(mean_weights),
+        absolute_value=bool(absolute_value),
+        return_edges=True,
+    )
+    edges = np.reshape(edges, conn.shape)
+    return {"edges": edges.astype(float)}
+
+
 def orthogonalise(store_dir, data):
     """Symmetric orthogonalisation weights of [samples x channels] data.
 
@@ -224,6 +326,11 @@ TASKS = {
     "fit_hmm": fit_hmm,
     "sign_flip": sign_flip,
     "orthogonalise": orthogonalise,
+    "spectra": spectra,
+    "spectral_components": spectral_components,
+    "power_maps": power_maps,
+    "coherence_networks": coherence_networks,
+    "threshold": threshold,
 }
 
 

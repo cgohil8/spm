@@ -1,5 +1,5 @@
 function info = spm_osld_install(S)
-% Install osl-dynamics in a Python environment for the OSLDynamics toolbox
+% Install osl-dynamics in a Python environment for the osl-dynamics toolbox
 % FORMAT info = spm_osld_install(S)
 % FORMAT spm_osld_install('uninstall')
 %

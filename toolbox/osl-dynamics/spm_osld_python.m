@@ -1,5 +1,5 @@
 function [python,info] = spm_osld_python(S)
-% Python environment with osl-dynamics used by the OSLDynamics toolbox
+% Python environment with osl-dynamics used by the osl-dynamics toolbox
 % FORMAT [python,info] = spm_osld_python
 % FORMAT spm_osld_python(S)
 %

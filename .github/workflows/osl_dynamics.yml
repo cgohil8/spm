@@ -1,9 +1,9 @@
-name: OSLDynamics toolbox
+name: osl-dynamics toolbox
 on:
   push:
     branches: [osl-dynamics]
     paths:
-      - 'toolbox/OSLDynamics/**'
+      - 'toolbox/osl-dynamics/**'
       - 'tests/test_spm_osld.m'
       - '.github/workflows/osl_dynamics.yml'
   workflow_dispatch:
@@ -36,9 +36,9 @@ jobs:
       - name: Install osl-dynamics (default location)
         uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3.0
         with:
-          command: addpath(pwd); addpath(fullfile(pwd,'toolbox','OSLDynamics')); info = spm_osld_install(); disp(info); spm_osld_python
+          command: addpath(pwd); addpath(fullfile(pwd,'toolbox','osl-dynamics')); info = spm_osld_install(); disp(info); spm_osld_python
 
-      - name: Run the OSLDynamics toolbox tests
+      - name: Run the osl-dynamics toolbox tests
         uses: matlab-actions/run-command@bfa857648f4895aa98a446fe41c85e0788421ed5 # v3.3.0
         with:
           command: addpath(pwd); r = runtests('tests/test_spm_osld.m'); disp(table(r)); assert(~isempty(r) && all([r.Passed]), 'Some tests did not pass.');

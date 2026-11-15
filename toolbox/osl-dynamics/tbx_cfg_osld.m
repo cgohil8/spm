@@ -1,5 +1,5 @@
 function osld = tbx_cfg_osld
-% Batch configuration of the OSLDynamics toolbox
+% Batch configuration of the osl-dynamics toolbox
 %__________________________________________________________________________
 
 % Chetan Gohil
@@ -10,7 +10,7 @@ if ~isdeployed, addpath(fileparts(mfilename('fullpath'))); end
 
 osld        = cfg_choice;
 osld.tag    = 'osld';
-osld.name   = 'OSL-Dynamics';
+osld.name   = 'osl-dynamics';
 osld.help   = {['Dynamic network models of M/EEG data with osl-dynamics. ' ...
     'Install osl-dynamics first with spm_osld_install.']};
 osld.values = {orthogonalise_cfg, sign_flip_cfg, hmm_cfg};
@@ -174,7 +174,7 @@ seed.tag     = 'seed';
 seed.name    = 'Random seed';
 seed.help    = {'Random seed, for reproducible results; empty for none.'};
 seed.strtype = 'w';
-seed.num     = [0 1];
+seed.num     = [0 Inf];
 seed.val     = {[]};
 
 outdir        = cfg_files;
